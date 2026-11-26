@@ -80,28 +80,28 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     ],
     benchmarkTable: [
       {
-        metric: 'Multi-Division Spec with Page Shifts',
-        bluebeam: 'Highlights all downstream shifted pages',
-        llmChat: 'Hits context limits or misses silent edits',
-        specDelta: 'Isolates modified CSI sections only',
+        metric: 'Alignment Unit',
+        bluebeam: 'Page-by-page visual overlay',
+        llmChat: 'Raw prompt token window',
+        specDelta: 'Normalized CSI section code & title',
       },
       {
-        metric: 'Header / Footer Date Change',
-        bluebeam: 'Highlighted on every page',
-        llmChat: 'Pollutes token budget',
-        specDelta: 'Auto-stripped via Y-coordinate & stamp rules',
+        metric: 'Header / Footer Handling',
+        bluebeam: 'Included unless masked manually',
+        llmChat: 'Passed in raw extracted text',
+        specDelta: 'Auto-stripped via edge-margin & stamp rules',
       },
       {
-        metric: 'Data Privacy / NDA Posture',
+        metric: 'Data Privacy / Processing',
         bluebeam: 'Local desktop executable',
-        llmChat: 'Uploads proprietary bid docs to cloud',
-        specDelta: 'Client-side Web Worker (opt-in Gemini brief)',
+        llmChat: 'Uploads document text to cloud chat',
+        specDelta: 'Browser Web Worker (opt-in Gemini brief)',
       },
       {
-        metric: 'Deliverable Format',
+        metric: 'Primary Deliverable',
         bluebeam: 'Redline PDF markup pages',
-        llmChat: 'Unstructured chat bullets',
-        specDelta: 'Excel Change Log + Clean Redline Print',
+        llmChat: 'Free-form chat summary',
+        specDelta: 'Structured .xlsx Change Log + Print Redline',
       },
     ],
     faqs: [
@@ -258,19 +258,19 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     eyebrow: 'Benchmark Study · Synthetic Sample Fixture',
     headline: 'Bluebeam Revu vs. Cloud LLMs vs. SpecDelta on a Multi-Division Addendum',
     summary:
-      'Methodology note: this benchmark evaluates SpecDelta’s deterministic engine on our reproducible 16-page synthetic Project Manual fixture (7-page Issued_For_Bid_Sample.pdf vs. 9-page Addendum_01_Sample.pdf) containing repeating headers, page shifts, inconsistent CSI spacing, a deleted section, and tolerance upgrades.',
+      'Methodology note: this page documents SpecDelta’s architectural approach and verified behavior on our reproducible 16-page synthetic Project Manual fixture (7-page Issued_For_Bid_Sample.pdf vs. 9-page Addendum_01_Sample.pdf). Competitor columns reflect documented workflow mechanics rather than timed trials on external customer manuals.',
     heroImage: 'desk',
     heroImageAlt: 'Specification benchmark desk setup with Project Manual and structural sheets',
     keyGotchas: [
       {
-        title: '01. Why Visual Overlay Struggles on Shifts',
+        title: '01. Why Page-Locked Overlay Struggles on Shifts',
         detail:
-          'Inserting clauses in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual page-by-page comparison flags Section 23 as changed even though its specification text did not change.',
+          'Inserting clauses in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual page-by-page comparison compares different text coordinates when page boundaries move.',
       },
       {
-        title: '02. Why Full-Book LLM Uploads Struggle',
+        title: '02. Why Full-Book LLM Prompts Carry Risk',
         detail:
-          'Pasting 500+ pages into a cloud chat model risks context truncation, latency, NDA policy concerns, and missed single-digit tolerance edits.',
+          'Uploading full manuals into general chat interfaces introduces NDA exposure, context-budget truncation on large books, and non-deterministic omission of single-digit tolerance edits.',
       },
       {
         title: '03. Why Deterministic Parsing + Optional Diff Brief Works',
@@ -297,26 +297,26 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     ],
     benchmarkTable: [
       {
-        metric: 'Page-Shift False Positives',
-        bluebeam: 'High (every shifted page flagged)',
-        llmChat: 'Moderate (summarization drift)',
-        specDelta: 'Section-aligned (eliminates page-shift noise)',
+        metric: 'Page-Shift Behavior',
+        bluebeam: 'Page-by-page visual comparison',
+        llmChat: 'Unstructured text chunking',
+        specDelta: 'Verified on 16-page fixture: 23 05 93 stays Unchanged across 2-page shift',
       },
       {
         metric: 'Inconsistent CSI Code Matching',
-        bluebeam: 'Manual navigation required',
-        llmChat: 'Inconsistent across chunks',
-        specDelta: 'Automatic (08 71 00 = 08 7100)',
+        bluebeam: 'Manual page navigation',
+        llmChat: 'Prompt-dependent',
+        specDelta: 'Verified: normalizes 08 71 00, 08 7100, and 08710 automatically',
       },
       {
         metric: 'Deterministic Tolerance Detection',
-        bluebeam: 'Visual highlight only',
-        llmChat: 'Can miss 15 mil → 20 mil edits',
-        specDelta: 'Myers word-token diff + Amber risk flag',
+        bluebeam: 'Visual highlight markup',
+        llmChat: 'Probabilistic summary',
+        specDelta: 'Verified: Myers word diff + delta chips (15 mil → 20 mil)',
       },
       {
         metric: 'Client-Side Privacy',
-        bluebeam: 'Local desktop',
+        bluebeam: 'Local desktop executable',
         llmChat: 'Cloud upload required',
         specDelta: 'Local Web Worker (optional Gemini brief)',
       },

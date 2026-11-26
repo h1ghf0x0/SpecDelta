@@ -38,10 +38,13 @@ export function isSectionPageStamp(line: string): boolean {
   // Reject prose sentences (semicolons, question/exclamation marks, or sentence periods)
   if (/[;?!]/.test(t)) return false;
   if (/[a-z]\.\s+[A-Za-z]/.test(t) || /\.$/.test(t)) return false;
+  if (/^(?:refer\s+to|see|per|comply|pursuant|under|in\s+accordance|submit|provide|for\s+more|note)\b/i.test(t)) {
+    return false;
+  }
 
-  // Pattern A: <Title or Prefix> <CSI Code> - [Page] <Num> (e.g. "CAST-IN-PLACE CONCRETE 033000 - 5")
+  // Pattern A: <ALL-CAPS Title or SECTION> <CSI Code> - [Page] <Num> (e.g. "CAST-IN-PLACE CONCRETE 033000 - 5")
   const titleThenCsiPage =
-    /^(?:SECTION\s+)?[A-Z0-9][A-Z0-9\s,&/()-]{1,55}?\s+\d{2}\s*\d{2}\s*\d{2}(?:\.\d{2})?\s*(?:[-–—|•]\s*|\s+)(?:PAGE\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
+    /^(?:SECTION\s+|Section\s+)?[A-Z0-9][A-Z0-9\s,&/()-]{1,55}?\s+\d{2}\s*\d{2}\s*\d{2}(?:\.\d{2})?\s*(?:[-–—|•]\s*|\s+)(?:(?:Page|PAGE|page)\s*)?\d{1,4}(?:\s*(?:of|OF|\/)\s*\d{1,4})?$/;
   if (titleThenCsiPage.test(t)) return true;
 
   // Pattern B: [SECTION] <CSI Code> [Title] - [Page] <Num> (e.g. "08 71 00 - DOOR HARDWARE - Page 4 of 12")

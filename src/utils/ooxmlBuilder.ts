@@ -229,7 +229,10 @@ export function buildXlsxBytes(
 
 export function buildCsvString(headers: string[], rows: string[][]): string {
   const escapeCell = (val: string) => {
-    const s = val ?? '';
+    let s = val ?? '';
+    if (/^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
     if (/[",\r\n]/.test(s)) {
       return `"${s.replace(/"/g, '""')}"`;
     }

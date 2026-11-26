@@ -4,8 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
-import { SEO_ROUTE_META, VALID_APP_ROUTES } from './src/data/seoRoutesMeta';
-import type { AppRoute } from './src/types/spec';
+import { SEO_ROUTE_META, VALID_APP_ROUTES } from './src/data/seoRoutesMeta.ts';
+import type { AppRoute } from './src/types/spec.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -117,8 +117,25 @@ function renderRouteSeoHtml(
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 app.set('trust proxy', 1);
+
+function resolveCanonicalOrigin(): string {
+  const raw = (process.env.APP_URL ?? '').trim().replace(/\/+$/, '');
+  if (raw && raw !== 'MY_APP_URL') {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return parsed.origin;
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+  return process.env.NODE_ENV === 'production'
+    ? 'https://specdelta.app'
+    : `http://localhost:${PORT}`;
+}
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 12;
@@ -300,10 +317,7 @@ async function startServer() {
         const indexPath = path.resolve(__dirname, 'index.html');
         const rawTemplate = fs.readFileSync(indexPath, 'utf-8');
         const transformed = await vite.transformIndexHtml(req.originalUrl, rawTemplate);
-        const protocol =
-          req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol || 'http';
-        const host = req.get('host') || `localhost:${PORT}`;
-        const { status, html } = renderRouteSeoHtml(transformed, req.path, `${protocol}://${host}`);
+        const { status, html } = renderRouteSeoHtml(transformed, req.path, resolveCanonicalOrigin());
         res.status(status).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(html);
       } catch (err) {
         vite.ssrFixStacktrace(err as Error);
@@ -332,10 +346,7 @@ async function startServer() {
         res.status(404).send('Build output not found.');
         return;
       }
-      const protocol =
-        req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol || 'https';
-      const host = req.get('host') || 'specdelta.app';
-      const { status, html } = renderRouteSeoHtml(cachedTemplate, req.path, `${protocol}://${host}`);
+      const { status, html } = renderRouteSeoHtml(cachedTemplate, req.path, resolveCanonicalOrigin());
       res.status(status).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(html);
     });
   }

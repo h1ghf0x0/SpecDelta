@@ -1,4 +1,4 @@
-import type { AppRoute } from '../types/spec';
+import type { AppRoute } from '../types/spec.ts';
 
 export interface RouteSeoMeta {
   title: string;

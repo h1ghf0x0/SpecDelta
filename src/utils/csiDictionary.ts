@@ -151,18 +151,31 @@ export function extractDirectiveDelta(oldText: string, newText: string): string 
   const newDirectives = extractModalDirectives(newText);
   if (oldDirectives.length === 0 && newDirectives.length === 0) return null;
 
-  if (oldDirectives.length > 0 && newDirectives.length > 0) {
-    const diffIdx = oldDirectives.findIndex(
-      (d, idx) => newDirectives[idx] && d !== newDirectives[idx]
-    );
-    if (diffIdx !== -1) {
-      return `Directive: ${oldDirectives[diffIdx]} → ${newDirectives[diffIdx]}`;
-    }
-    if (oldDirectives[0] !== newDirectives[0]) {
-      return `Directive: ${oldDirectives[0]} → ${newDirectives[0]}`;
-    }
+  const oldCounts = new Map<string, number>();
+  const newCounts = new Map<string, number>();
+  for (const d of oldDirectives) oldCounts.set(d, (oldCounts.get(d) ?? 0) + 1);
+  for (const d of newDirectives) newCounts.set(d, (newCounts.get(d) ?? 0) + 1);
+
+  const removed: string[] = [];
+  const added: string[] = [];
+
+  for (const [modal, count] of oldCounts.entries()) {
+    const diff = count - (newCounts.get(modal) ?? 0);
+    for (let i = 0; i < diff; i++) removed.push(modal);
   }
-  return null;
+  for (const [modal, count] of newCounts.entries()) {
+    const diff = count - (oldCounts.get(modal) ?? 0);
+    for (let i = 0; i < diff; i++) added.push(modal);
+  }
+
+  if (removed.length === 0 && added.length === 0) return null;
+  if (removed.length > 0 && added.length > 0) {
+    return `Directive: ${removed[0]} → ${added[0]}`;
+  }
+  if (added.length > 0) {
+    return `Directive added: ${added[0]}`;
+  }
+  return `Directive removed: ${removed[0]}`;
 }
 
 /**

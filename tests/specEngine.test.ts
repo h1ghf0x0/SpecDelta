@@ -69,6 +69,38 @@ test('risk dictionary & delta chips catch threshold and modal directive shifts w
   const dateDiff = computeWordDiff(dateOld, dateNew);
   assert.deepEqual(detectDeltaRiskFlags(dateDiff.tokens, dateOld, dateNew), []);
   assert.equal(detectRiskFlags(dateNew).length, 0);
+
+  // Regression 3: Added, removed, and multi-modal deletion without positional mismatch
+  const modalAddedDiff = computeWordDiff(
+    'Subcontractor to provide submittals within 14 days.',
+    'Subcontractor shall provide submittals within 14 days.'
+  );
+  assert.ok(
+    detectDeltaRiskFlags(
+      modalAddedDiff.tokens,
+      'Subcontractor to provide submittals within 14 days.',
+      'Subcontractor shall provide submittals within 14 days.'
+    ).includes('Directive added: shall')
+  );
+
+  const modalRemovedDiff = computeWordDiff(
+    'Subcontractor shall provide submittals within 14 days.',
+    'Subcontractor to provide submittals within 14 days.'
+  );
+  assert.ok(
+    detectDeltaRiskFlags(
+      modalRemovedDiff.tokens,
+      'Subcontractor shall provide submittals within 14 days.',
+      'Subcontractor to provide submittals within 14 days.'
+    ).includes('Directive removed: shall')
+  );
+
+  const twoModalsOld = 'Contractor shall submit samples and Architect may inspect mockups.';
+  const twoModalsNew = 'Contractor to submit samples and Architect may inspect mockups.';
+  const twoModalsDiff = computeWordDiff(twoModalsOld, twoModalsNew);
+  const twoModalFlags = detectDeltaRiskFlags(twoModalsDiff.tokens, twoModalsOld, twoModalsNew);
+  assert.ok(twoModalFlags.includes('Directive removed: shall'));
+  assert.ok(!twoModalFlags.includes('Directive: shall → may'));
 });
 
 test('stripHeadersAndFooters removes stamps cleanly while preserving bottom-margin spec prose', () => {
@@ -77,6 +109,7 @@ test('stripHeadersAndFooters removes stamps cleanly while preserving bottom-marg
   assert.equal(isSectionPageStamp('SECTION 03 30 00 - CAST-IN-PLACE CONCRETE'), false);
   assert.equal(isSectionPageStamp('1.02 SUBMITTALS'), false);
   assert.equal(isSectionPageStamp('Warranty period shall be 5 years. See page 12.'), false);
+  assert.equal(isSectionPageStamp('Refer to Section 03 30 00 Page 5'), false);
 
   const lines = [
     { page: 1, yPct: 0.04, text: 'ACME MEDICAL CENTER - BID SET' },
@@ -85,6 +118,7 @@ test('stripHeadersAndFooters removes stamps cleanly while preserving bottom-marg
     { page: 2, yPct: 0.04, text: 'ACME MEDICAL CENTER - BID SET' },
     { page: 2, yPct: 0.30, text: '1.02 SUBMITTALS' },
     { page: 2, yPct: 0.92, text: 'Warranty period shall be 5 years. See page 12.' },
+    { page: 2, yPct: 0.93, text: 'Refer to Section 03 30 00 Page 5' },
     { page: 2, yPct: 0.96, text: 'CAST-IN-PLACE CONCRETE 033000 - 6' },
     { page: 3, yPct: 0.04, text: 'ACME MEDICAL CENTER - BID SET' },
     { page: 3, yPct: 0.40, text: 'Provide 4,000 psi concrete.' },
@@ -105,6 +139,7 @@ test('stripHeadersAndFooters removes stamps cleanly while preserving bottom-marg
       'SECTION 03 30 00 - CAST-IN-PLACE CONCRETE',
       '1.02 SUBMITTALS',
       'Warranty period shall be 5 years. See page 12.',
+      'Refer to Section 03 30 00 Page 5',
       'Provide 4,000 psi concrete.',
     ]
   );
@@ -251,10 +286,21 @@ test('pure-TS OOXML builder produces a valid ZIP/XLSX package and RFC-4180 CSV',
   assert.ok(rawText.includes('Concrete &amp; &quot;Vapor&quot; &lt;Retarder&gt;'));
 
   const csv = buildCsvString(
-    ['CSI Code', 'Delta'],
-    [['03 30 00', '4,000 PSI, "Class A"']]
+    ['CSI Code', 'Delta', 'Tolerance', 'Deduct', 'Formula'],
+    [
+      [
+        '03 30 00',
+        '4,000 PSI, "Class A"',
+        '+/- 1/8 inch tolerance',
+        '-5% deduct alternate',
+        '=HYPERLINK("https://example.com","x")',
+      ],
+    ]
   );
-  assert.equal(csv, 'CSI Code,Delta\r\n03 30 00,"4,000 PSI, ""Class A"""');
+  assert.equal(
+    csv,
+    'CSI Code,Delta,Tolerance,Deduct,Formula\r\n03 30 00,"4,000 PSI, ""Class A""",\'+/- 1/8 inch tolerance,\'-5% deduct alternate,"\'=HYPERLINK(""https://example.com"",""x"")"'
+  );
 });
 
 async function parseRealPdfBytesWithProductionPipeline(
