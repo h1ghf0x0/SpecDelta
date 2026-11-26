@@ -10,7 +10,9 @@ export type AppRoute =
   | '/compare-division-08-doors-hardware-specs'
   | '/compare-division-09-finishes-specs'
   | '/compare-division-23-hvac-specs'
-  | '/compare-division-26-electrical-specs';
+  | '/compare-division-26-electrical-specs'
+  | '/privacy'
+  | '/terms';
 
 export type DiffStatus = 'modified' | 'added' | 'deleted' | 'unchanged';
 

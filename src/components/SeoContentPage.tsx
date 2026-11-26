@@ -30,18 +30,23 @@ export function SeoContentPage({ route, onNavigate, onRunSampleDiff }: SeoConten
           {isTradeGuide && (
             <div className="mb-6 flex flex-wrap items-center gap-1 p-1 bg-white border border-slate-200 rounded-md w-fit">
               {TRADE_GUIDE_ROUTES.map((t) => (
-                <button
+                <a
                   key={t.route}
-                  type="button"
-                  onClick={() => onNavigate(t.route)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  href={t.route}
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                      e.preventDefault();
+                      onNavigate(t.route);
+                    }
+                  }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
                     route === t.route
                       ? 'bg-[#1E40AF] text-white'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   Div {t.code} · {t.label}
-                </button>
+                </a>
               ))}
             </div>
           )}
@@ -53,21 +58,26 @@ export function SeoContentPage({ route, onNavigate, onRunSampleDiff }: SeoConten
                   { r: '/vs-bluebeam', label: 'vs Bluebeam Revu' },
                   { r: '/acrobat-alternative', label: 'Adobe Acrobat Alternative' },
                   { r: '/unclouded-addenda', label: 'Unclouded Addenda' },
-                  { r: '/benchmark', label: '500-Page Benchmark' },
+                  { r: '/benchmark', label: 'Benchmark Fixture' },
                 ] as Array<{ r: AppRoute; label: string }>
               ).map((tab) => (
-                <button
+                <a
                   key={tab.r}
-                  type="button"
-                  onClick={() => onNavigate(tab.r)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  href={tab.r}
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                      e.preventDefault();
+                      onNavigate(tab.r);
+                    }
+                  }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
                     route === tab.r
                       ? 'bg-[#1E40AF] text-white'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   {tab.label}
-                </button>
+                </a>
               ))}
             </div>
           )}
@@ -83,25 +93,42 @@ export function SeoContentPage({ route, onNavigate, onRunSampleDiff }: SeoConten
               </p>
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() =>
-                    page.ctaTarget === '/split-spec-book'
-                      ? onNavigate('/split-spec-book')
-                      : onRunSampleDiff(page.divisionFilter)
-                  }
-                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  {page.ctaLabel}
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/split-spec-book')}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                {page.ctaTarget === '/split-spec-book' || page.category === 'Legal & Trust' ? (
+                  <a
+                    href={page.ctaTarget}
+                    onClick={(e) => {
+                      if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                        e.preventDefault();
+                        onNavigate(page.ctaTarget);
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] transition-colors whitespace-nowrap shrink-0"
+                  >
+                    {page.ctaLabel}
+                    <ArrowRight className="w-4 h-4" />
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onRunSampleDiff(page.divisionFilter)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    {page.ctaLabel}
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+                <a
+                  href="/split-spec-book"
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                      e.preventDefault();
+                      onNavigate('/split-spec-book');
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
                 >
                   Open CSI Spec Splitter
-                </button>
+                </a>
               </div>
             </div>
 

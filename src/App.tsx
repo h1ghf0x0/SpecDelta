@@ -20,17 +20,20 @@ const VALID_ROUTES = new Set<AppRoute>([
   '/compare-division-09-finishes-specs',
   '/compare-division-23-hvac-specs',
   '/compare-division-26-electrical-specs',
+  '/privacy',
+  '/terms',
 ]);
 
-function normalizeRoute(pathname: string): AppRoute {
+function normalizeRoute(pathname: string): AppRoute | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
-  return VALID_ROUTES.has(clean as AppRoute) ? (clean as AppRoute) : '/';
+  return VALID_ROUTES.has(clean as AppRoute) ? (clean as AppRoute) : null;
 }
 
-function updateDocumentSeo(route: AppRoute) {
+function updateDocumentSeo(route: AppRoute | null) {
   let title = 'SpecDelta – Section-Aware Construction Spec Diff & CSI Splitter';
   let description =
     'Compare 600-page Project Manuals and Addenda locally in your browser by CSI section—no page-shift false positives, instant Excel redlines, and CSI PDF splitting.';
+  let robotsContent = 'index, follow';
 
   const schemas: unknown[] = [
     {
@@ -48,7 +51,11 @@ function updateDocumentSeo(route: AppRoute) {
     },
   ];
 
-  if (route === '/split-spec-book') {
+  if (route === null) {
+    title = 'Page Not Found (404) | SpecDelta';
+    description = 'The requested SpecDelta page could not be found.';
+    robotsContent = 'noindex, nofollow';
+  } else if (route === '/split-spec-book') {
     title = 'Free CSI MasterFormat Spec Book Splitter | SpecDelta';
     description =
       'Upload an 800-page construction Project Manual PDF and extract only your CSI Division or sections into a clean standalone PDF locally in your browser.';
@@ -113,6 +120,14 @@ function updateDocumentSeo(route: AppRoute) {
   setMeta('meta[name="twitter:title"]', title);
   setMeta('meta[name="twitter:description"]', description);
 
+  let robotsMeta = document.querySelector('meta[name="robots"]');
+  if (!robotsMeta) {
+    robotsMeta = document.createElement('meta');
+    robotsMeta.setAttribute('name', 'robots');
+    document.head.appendChild(robotsMeta);
+  }
+  robotsMeta.setAttribute('content', robotsContent);
+
   const schemaScript = document.getElementById('specdelta-schema');
   if (schemaScript) {
     schemaScript.textContent = JSON.stringify(schemas);
@@ -120,7 +135,7 @@ function updateDocumentSeo(route: AppRoute) {
 }
 
 export default function App() {
-  const [route, setRoute] = useState<AppRoute>(() =>
+  const [route, setRoute] = useState<AppRoute | null>(() =>
     normalizeRoute(window.location.pathname)
   );
   const [divisionPreset, setDivisionPreset] = useState<string>('all');
@@ -145,7 +160,7 @@ export default function App() {
     } else if (nextRoute === '/') {
       setDivisionPreset('all');
     }
-    if (window.location.pathname !== nextRoute) {
+    if (window.location.pathname !== nextRoute || window.location.search) {
       window.history.pushState({}, '', nextRoute);
     }
     setRoute(nextRoute);
@@ -174,7 +189,45 @@ export default function App() {
       />
 
       <main className="flex-1">
-        {route === '/' ? (
+        {route === null ? (
+          <section className="max-w-[1380px] mx-auto px-4 sm:px-6 py-20">
+            <div className="max-w-xl bg-white border border-slate-200 rounded-lg p-8 space-y-4">
+              <div className="font-mono text-xs font-semibold text-[#B91C1C]">HTTP 404 · Route Not Found</div>
+              <h1 className="font-display text-2xl font-bold text-slate-900">
+                That SpecDelta page does not exist.
+              </h1>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Check the URL path or return directly to the Spec Diff Checker or CSI Spec Book Splitter.
+              </p>
+              <div className="pt-2 flex flex-wrap items-center gap-3">
+                <a
+                  href="/"
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                      e.preventDefault();
+                      navigate('/');
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] transition-colors"
+                >
+                  Open Spec Diff Checker
+                </a>
+                <a
+                  href="/split-spec-book"
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                      e.preventDefault();
+                      navigate('/split-spec-book');
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+                >
+                  Open CSI Spec Splitter
+                </a>
+              </div>
+            </div>
+          </section>
+        ) : route === '/' ? (
           <DiffWorkbench
             onNavigate={(r) => navigate(r)}
             externalSampleRequest={sampleRequestCount}

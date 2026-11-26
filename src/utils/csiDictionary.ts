@@ -78,6 +78,11 @@ export const RISK_PATTERNS: RiskPattern[] = [
     regex: /\b\d+(?:\.\d+)?[-\s]?(?:hr|hour|hours|min|minute|minutes|year|years|yr|yrs)\b/gi,
   },
   {
+    label: 'Threshold / Limit',
+    category: 'Tolerance / Unit',
+    regex: /\b(?:minimum|not\s+less\s+than|at\s+least|maximum|not\s+exceeding|not\s+to\s+exceed|no\s+more\s+than)\b/gi,
+  },
+  {
     label: 'Currency / Percentage',
     category: 'Cost / Allowance',
     regex: /(?:\$\s?\d[\d,]*(?:\.\d{1,2})?|\b\d+(?:\.\d+)?%)/gi,
@@ -105,7 +110,7 @@ export const RISK_PATTERNS: RiskPattern[] = [
   {
     label: 'Contractual Directive',
     category: 'Scope / Liability',
-    regex: /\b(?:shall\s+not|delete|deleted|omitted|excluded|mandatory)\b/gi,
+    regex: /\b(?:shall\s+not|may\s+not|shall|must|may|should|delete|deleted|omitted|excluded|mandatory|prohibited)\b/gi,
   },
 ];
 
@@ -184,7 +189,9 @@ export function extractParagraphDeltaChips(oldText: string, newText: string): st
       s.replace(/\s+/g, ' ').trim()
     );
     if (oldMatches.length > 0 && newMatches.length > 0) {
-      const firstDiffIdx = oldMatches.findIndex((m, idx) => newMatches[idx] && m.toLowerCase() !== newMatches[idx].toLowerCase());
+      const firstDiffIdx = oldMatches.findIndex(
+        (m, idx) => newMatches[idx] && m.toLowerCase() !== newMatches[idx].toLowerCase()
+      );
       if (firstDiffIdx !== -1) {
         chips.push(`${group.label}: ${oldMatches[firstDiffIdx]} → ${newMatches[firstDiffIdx]}`);
       } else if (oldMatches[0].toLowerCase() !== newMatches[0].toLowerCase()) {
@@ -193,12 +200,44 @@ export function extractParagraphDeltaChips(oldText: string, newText: string): st
     }
   }
 
-  const scopeRe = /\b(furnish\s+and\s+install|furnish\s+only|install\s+only|by\s+owner|owner[- ]furnished|contractor[- ]installed)\b/i;
+  const scopeRe =
+    /\b(furnish\s+and\s+install|furnish\s+only|install\s+only|by\s+owner|owner[- ]furnished|contractor[- ]installed)\b/i;
   const oldScope = oldText.match(scopeRe)?.[1];
   const newScope = newText.match(scopeRe)?.[1];
   if (oldScope && newScope && oldScope.toLowerCase() !== newScope.toLowerCase()) {
     chips.push(`Scope: ${oldScope} → ${newScope}`);
   }
 
-  return chips.slice(0, 3);
+  const directiveRe = /\b(shall\s+not|may\s+not|shall|must|may|should)\b/gi;
+  const oldDirectives = (oldText.match(directiveRe) ?? []).map((s) => s.toLowerCase());
+  const newDirectives = (newText.match(directiveRe) ?? []).map((s) => s.toLowerCase());
+  if (oldDirectives.length > 0 && newDirectives.length > 0) {
+    const diffIdx = oldDirectives.findIndex(
+      (d, idx) => newDirectives[idx] && d !== newDirectives[idx]
+    );
+    if (diffIdx !== -1) {
+      chips.push(`Directive: ${oldDirectives[diffIdx]} → ${newDirectives[diffIdx]}`);
+    } else if (oldDirectives[0] !== newDirectives[0]) {
+      chips.push(`Directive: ${oldDirectives[0]} → ${newDirectives[0]}`);
+    }
+  }
+
+  const thresholdRe =
+    /\b(minimum|not\s+less\s+than|at\s+least|maximum|not\s+exceeding|not\s+to\s+exceed|no\s+more\s+than)\b/gi;
+  const oldThresh = (oldText.match(thresholdRe) ?? []).map((s) =>
+    s.replace(/\s+/g, ' ').toLowerCase()
+  );
+  const newThresh = (newText.match(thresholdRe) ?? []).map((s) =>
+    s.replace(/\s+/g, ' ').toLowerCase()
+  );
+  if (oldThresh.length > 0 && newThresh.length > 0) {
+    const diffIdx = oldThresh.findIndex((t, idx) => newThresh[idx] && t !== newThresh[idx]);
+    if (diffIdx !== -1) {
+      chips.push(`Threshold: ${oldThresh[diffIdx]} → ${newThresh[diffIdx]}`);
+    } else if (oldThresh[0] !== newThresh[0]) {
+      chips.push(`Threshold: ${oldThresh[0]} → ${newThresh[0]}`);
+    }
+  }
+
+  return chips.slice(0, 4);
 }

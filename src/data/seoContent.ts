@@ -14,7 +14,7 @@ export interface BenchmarkRow {
 
 export interface SeoPageConfig {
   route: AppRoute;
-  category: 'Comparison' | 'Workflow Guide' | 'Benchmark' | 'Trade Guide';
+  category: 'Comparison' | 'Workflow Guide' | 'Benchmark' | 'Trade Guide' | 'Legal & Trust';
   divisionFilter?: string;
   metaTitle: string;
   metaDescription: string;
@@ -80,22 +80,22 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     ],
     benchmarkTable: [
       {
-        metric: '600-Page Spec with 2-Page Shift',
-        bluebeam: 'Flags 240+ pages red (false positives)',
+        metric: 'Multi-Division Spec with Page Shifts',
+        bluebeam: 'Highlights all downstream shifted pages',
         llmChat: 'Hits context limits or misses silent edits',
-        specDelta: 'Isolates 11 genuinely modified sections',
+        specDelta: 'Isolates modified CSI sections only',
       },
       {
         metric: 'Header / Footer Date Change',
         bluebeam: 'Highlighted on every page',
         llmChat: 'Pollutes token budget',
-        specDelta: 'Auto-stripped via Y-coordinate frequency',
+        specDelta: 'Auto-stripped via Y-coordinate & stamp rules',
       },
       {
         metric: 'Data Privacy / NDA Posture',
         bluebeam: 'Local desktop executable',
         llmChat: 'Uploads proprietary bid docs to cloud',
-        specDelta: '100% client-side Web Worker',
+        specDelta: 'Client-side Web Worker (opt-in Gemini brief)',
       },
       {
         metric: 'Deliverable Format',
@@ -118,7 +118,7 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
       {
         question: 'Do my confidential bid specifications get uploaded to a server?',
         answer:
-          'Never by default. PDF extraction, noise stripping, CSI chunking, Myers diffing, and Excel export run 100% locally in your browser. Only an explicit opt-in click on the AI Scope Brief sends the isolated changed paragraphs.',
+          'Never by default. PDF extraction, noise stripping, CSI chunking, Myers diffing, and Excel export run locally in your browser. Only an explicit opt-in click on the Gemini Scope Brief sends isolated changed paragraphs.',
       },
     ],
     ctaLabel: 'Test on Built-In Sample Spec',
@@ -255,44 +255,44 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     metaTitle: 'Benchmark: Bluebeam Revu vs. LLMs vs. SpecDelta on Addendum PDFs',
     metaDescription:
       'Side-by-side benchmark measuring false positives, runtime, and privacy across Bluebeam Revu, cloud LLM chat tools, and SpecDelta.',
-    eyebrow: 'Benchmark Study · Reproducible Spec Test',
+    eyebrow: 'Benchmark Study · Synthetic Sample Fixture',
     headline: 'Bluebeam Revu vs. Cloud LLMs vs. SpecDelta on a Multi-Division Addendum',
     summary:
-      'We tested the three workflows estimators rely on during bid week against a realistic Project Manual containing repeating headers, a 2-page text shift, inconsistent CSI spacing, a deleted section, and subtle tolerance upgrades.',
+      'Methodology note: this benchmark evaluates SpecDelta’s deterministic engine on our reproducible 26-page synthetic Project Manual fixture (Issued_For_Bid_Sample.pdf vs. Addendum_01_Sample.pdf) containing repeating headers, page shifts, inconsistent CSI spacing, a deleted section, and tolerance upgrades.',
     heroImage: 'desk',
     heroImageAlt: 'Specification benchmark desk setup with Project Manual and structural sheets',
     keyGotchas: [
       {
-        title: '01. Why Visual Overlay Fails',
+        title: '01. Why Visual Overlay Struggles on Shifts',
         detail:
-          'Inserting 2 paragraphs in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual comparison flags Section 23 as changed even though zero characters changed.',
+          'Inserting 2 paragraphs in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual page-by-page comparison flags Section 23 as changed even though its specification text did not change.',
       },
       {
-        title: '02. Why Full-Book LLM Uploads Fail',
+        title: '02. Why Full-Book LLM Uploads Struggle',
         detail:
-          'Pasting 500+ pages into a cloud chat model triggers truncation, multi-minute latency, NDA policy violations, and missed single-digit tolerance edits.',
+          'Pasting 500+ pages into a cloud chat model risks context truncation, latency, NDA policy concerns, and missed single-digit tolerance edits.',
       },
       {
-        title: '03. Why Deterministic Parsing + Optional Diff Brief Wins',
+        title: '03. Why Deterministic Parsing + Optional Diff Brief Works',
         detail:
-          'By isolating only the changed paragraphs locally in milliseconds, SpecDelta eliminates hallucinations and reduces any optional AI summary payload by >98%.',
+          'By isolating only the changed paragraphs locally in milliseconds, SpecDelta keeps the core diff deterministic and dramatically shrinks any optional Gemini brief payload.',
       },
     ],
     howToSteps: [
       {
-        step: 'Download or Load the Benchmark Sample Set',
+        step: 'Download or Load the 26-Page Benchmark Sample Set',
         description:
-          'Click "Load Sample Spec" in the SpecDelta Diff Checker to generate the exact Issued-For-Bid and Addendum 01 PDFs locally in your browser.',
+          'Click "Load Sample Spec" in the SpecDelta Diff Checker to generate the exact Issued-For-Bid and Addendum 01 synthetic fixture PDFs locally in your browser.',
       },
       {
-        step: 'Inspect Division 23 (Zero False Positives)',
+        step: 'Inspect Division 23 (Aligned Across Page Shift)',
         description:
-          'Verify that Section 23 05 93 shifted pages between sets yet shows Unchanged—while Section 03 30 00, 07 54 23, 08 71 00, and 26 24 13 surface exact word diffs.',
+          'Verify that Section 23 05 93 shifted pages between sets yet reports Unchanged—while Section 03 30 00, 07 54 23, 08 71 00, and 26 24 13 surface exact word diffs.',
       },
       {
         step: 'Export the Auditable Change Log',
         description:
-          'Download the .xlsx log to distribute to trade estimators in under 5 seconds.',
+          'Download the .xlsx log to distribute to trade estimators in seconds—and always cross-check pricing-critical changes against the signed Addendum PDF.',
       },
     ],
     benchmarkTable: [
@@ -300,7 +300,7 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
         metric: 'Page-Shift False Positives',
         bluebeam: 'High (every shifted page flagged)',
         llmChat: 'Moderate (summarization drift)',
-        specDelta: '0% (section-aligned)',
+        specDelta: 'Section-aligned (eliminates page-shift noise)',
       },
       {
         metric: 'Inconsistent CSI Code Matching',
@@ -309,16 +309,16 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
         specDelta: 'Automatic (08 71 00 = 08 7100)',
       },
       {
-        metric: 'Deterministic Tolerance Catch Rate',
+        metric: 'Deterministic Tolerance Detection',
         bluebeam: 'Visual highlight only',
         llmChat: 'Can miss 15 mil → 20 mil edits',
-        specDelta: '100% Myers token diff + Amber flag',
+        specDelta: 'Myers word-token diff + Amber risk flag',
       },
       {
         metric: 'Client-Side Privacy',
         bluebeam: 'Local desktop',
         llmChat: 'Cloud upload required',
-        specDelta: '100% browser Web Worker',
+        specDelta: 'Local Web Worker (optional Gemini brief)',
       },
     ],
     faqs: [
@@ -616,6 +616,110 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
       },
     ],
     ctaLabel: 'Compare Division 26 Specs',
+    ctaTarget: '/',
+  },
+
+  '/privacy': {
+    route: '/privacy',
+    category: 'Legal & Trust',
+    metaTitle: 'Privacy & Local Processing Policy | SpecDelta',
+    metaDescription:
+      'How SpecDelta processes Project Manual PDFs locally in browser Web Workers, stores review checkboxes in localStorage, and handles optional Google Gemini requests.',
+    eyebrow: 'Privacy & Architecture Disclosure',
+    headline: 'How SpecDelta Handles Your Project Manuals & Optional AI Requests',
+    summary:
+      'PDF extraction, header/footer stripping, CSI section alignment, word diffing, and Excel/CSV/PDF exports execute locally inside your browser Web Worker. Full Project Manual PDFs are never uploaded to SpecDelta servers.',
+    heroImage: 'desk',
+    heroImageAlt: 'Specification desk representing local browser PDF processing',
+    keyGotchas: [
+      {
+        title: '01. Local Web Worker PDF Parsing',
+        detail:
+          'Uploaded PDF bytes remain in browser memory inside an isolated Web Worker. No copies are transmitted to or stored on a backend database.',
+      },
+      {
+        title: '02. Browser Review Persistence (localStorage)',
+        detail:
+          'Section "Reviewed" checkboxes are saved only in your browser localStorage keyed by filename and page-count fingerprint so multi-hour bid reviews survive refreshes. Clear browser site data anytime to reset.',
+      },
+      {
+        title: '03. Explicit Opt-In Google Gemini Scope Brief',
+        detail:
+          'Clicking "Generate 5-Bullet Gemini Brief" is strictly optional and transmits only the top risk-ranked changed paragraph excerpts (capped at 25 sections) to Google Gemini via /api/scope-brief.',
+      },
+    ],
+    howToSteps: [
+      {
+        step: 'Keep Confidential Specs 100% Local',
+        description:
+          'Leave the Opt-In Gemini Brief closed on NDA projects; deterministic diffing, Money & Risk highlighting, and Excel exports work offline once loaded.',
+      },
+      {
+        step: 'Inspect Exact Transmission Scope Before Clicking',
+        description:
+          'When you open the Gemini Brief panel, SpecDelta displays the exact section count and character budget before sending any excerpt.',
+      },
+    ],
+    faqs: [
+      {
+        question: 'Does SpecDelta retain any PDF text or diffs on a server?',
+        answer:
+          'No. SpecDelta has no user database or file storage. The optional /api/scope-brief route processes the compact changed-paragraph payload in memory and applies IP rate limiting to prevent abuse.',
+      },
+    ],
+    ctaLabel: 'Return to Spec Diff Checker',
+    ctaTarget: '/',
+  },
+
+  '/terms': {
+    route: '/terms',
+    category: 'Legal & Trust',
+    metaTitle: 'Terms of Use & Estimator Verification Standard | SpecDelta',
+    metaDescription:
+      'Terms of use and bid-day verification disclaimer for SpecDelta Project Manual diffing and CSI PDF splitting.',
+    eyebrow: 'Terms of Use · Bid-Day Verification',
+    headline: 'Terms of Use & Estimator Verification Disclaimer',
+    summary:
+      'SpecDelta is an automated pre-construction triage and PDF splitting aid designed to accelerate addendum review. It does not replace professional estimator verification against signed contract documents.',
+    heroImage: 'blueprint',
+    heroImageAlt: 'Construction specifications and drawings for bid-day verification',
+    keyGotchas: [
+      {
+        title: '01. Verify Scope & Pricing Against Signed Addenda',
+        detail:
+          'PDF text streams vary widely across authoring tools. Always verify material tolerances, allowances, warranties, and contractual directives directly against the architect’s signed Addendum PDF before submitting a bid.',
+      },
+      {
+        title: '02. Scanned or Non-OCR Pages Require Manual Review',
+        detail:
+          'SpecDelta detects raster-image pages with <30 extractable characters and surfaces per-section warnings, because SpecDelta does not perform optical character recognition (OCR).',
+      },
+      {
+        title: '03. Provided As-Is Without Warranty',
+        detail:
+          'SpecDelta is provided "as is" under the MIT License without express or implied warranties of completeness or fitness for a particular bid submission.',
+      },
+    ],
+    howToSteps: [
+      {
+        step: 'Check Parse Coverage & Scanned-Page Warnings',
+        description:
+          'Confirm the extracted CSI section count and inspect any raster-page overlap notices shown in the workbench.',
+      },
+      {
+        step: 'Audit Stripped Headers & Footers',
+        description:
+          'Open the Stripped Noise drawer if a specification uses unusual edge-margin formatting.',
+      },
+    ],
+    faqs: [
+      {
+        question: 'Who is responsible for final bid accuracy?',
+        answer:
+          'The estimating team and contractor submitting the bid remain solely responsible for verifying all contract requirements against the official bidding documents.',
+      },
+    ],
+    ctaLabel: 'Open Spec Diff Checker',
     ctaTarget: '/',
   },
 };

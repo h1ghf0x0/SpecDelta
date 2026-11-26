@@ -24,16 +24,57 @@ interface SectionDiffInput {
 
 const app = express();
 const PORT = 3000;
+app.set('trust proxy', 1);
+
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 12;
+const ipRequestTimestamps = new Map<string, number[]>();
+
+function checkScopeBriefRateLimit(ip: string): { allowed: boolean; retryAfterSeconds: number } {
+  const now = Date.now();
+  const cutoff = now - RATE_LIMIT_WINDOW_MS;
+  const recent = (ipRequestTimestamps.get(ip) ?? []).filter((ts) => ts > cutoff);
+
+  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
+    const oldest = recent[0];
+    const retryAfterSeconds = Math.max(1, Math.ceil((oldest + RATE_LIMIT_WINDOW_MS - now) / 1000));
+    ipRequestTimestamps.set(ip, recent);
+    return { allowed: false, retryAfterSeconds };
+  }
+
+  recent.push(now);
+  ipRequestTimestamps.set(ip, recent);
+
+  if (ipRequestTimestamps.size > 1000) {
+    for (const [key, list] of ipRequestTimestamps.entries()) {
+      const kept = list.filter((ts) => ts > cutoff);
+      if (kept.length === 0) ipRequestTimestamps.delete(key);
+      else ipRequestTimestamps.set(key, kept);
+    }
+  }
+
+  return { allowed: true, retryAfterSeconds: 0 };
+}
 
 app.use(express.json({ limit: '2mb' }));
 
 app.post('/api/scope-brief', async (req, res) => {
   try {
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const rateCheck = checkScopeBriefRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      res.setHeader('Retry-After', String(rateCheck.retryAfterSeconds));
+      res.status(429).json({
+        error: `Rate limit exceeded (max ${RATE_LIMIT_MAX_REQUESTS} AI briefs per 15 minutes). Retry in ${rateCheck.retryAfterSeconds}s or continue using deterministic risk flags.`,
+      });
+      return;
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
       res.status(400).json({
         error:
-          'GEMINI_API_KEY is not configured in Settings > Secrets. Add a Gemini API key to generate AI Scope Impact Briefs, or continue using 100% local deterministic risk flags.',
+          'GEMINI_API_KEY is not configured in Settings > Secrets. Add a Gemini API key to generate AI Scope Impact Briefs, or continue using local deterministic risk flags.',
       });
       return;
     }

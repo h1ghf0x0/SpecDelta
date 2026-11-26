@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react';
 import { TRADE_GUIDE_ROUTES } from '../data/seoContent';
 import type { AppRoute } from '../types/spec';
 
@@ -6,18 +7,25 @@ interface FooterProps {
 }
 
 export function Footer({ onNavigate }: FooterProps) {
+  const handleLink = (e: MouseEvent<HTMLAnchorElement>, route: AppRoute) => {
+    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+      e.preventDefault();
+      onNavigate(route);
+    }
+  };
+
   return (
     <footer className="no-print border-t border-slate-200 bg-white mt-16">
       <div className="max-w-[1380px] mx-auto px-4 sm:px-6 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="space-y-3">
-            <button
-              type="button"
-              onClick={() => onNavigate('/')}
-              className="font-display text-base font-bold tracking-tight text-slate-900 cursor-pointer"
+            <a
+              href="/"
+              onClick={(e) => handleLink(e, '/')}
+              className="inline-block font-display text-base font-bold tracking-tight text-slate-900 hover:text-[#1E40AF] transition-colors"
             >
               SpecDelta
-            </button>
+            </a>
             <p className="text-sm text-slate-600 leading-relaxed max-w-xs">
               Section-aware Project Manual diffing and CSI MasterFormat splitting built for commercial estimators. Runs locally in your browser.
             </p>
@@ -29,31 +37,31 @@ export function Footer({ onNavigate }: FooterProps) {
             </h3>
             <ul className="space-y-2 text-sm text-slate-600">
               <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/')}
-                  className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                <a
+                  href="/"
+                  onClick={(e) => handleLink(e, '/')}
+                  className="hover:text-[#1E40AF] transition-colors"
                 >
                   Spec Diff Checker
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/split-spec-book')}
-                  className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                <a
+                  href="/split-spec-book"
+                  onClick={(e) => handleLink(e, '/split-spec-book')}
+                  className="hover:text-[#1E40AF] transition-colors"
                 >
                   CSI Spec Book Splitter
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/benchmark')}
-                  className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                <a
+                  href="/benchmark"
+                  onClick={(e) => handleLink(e, '/benchmark')}
+                  className="hover:text-[#1E40AF] transition-colors"
                 >
-                  500-Page Spec Benchmark
-                </button>
+                  Synthetic Spec Benchmark
+                </a>
               </li>
             </ul>
           </div>
@@ -64,31 +72,31 @@ export function Footer({ onNavigate }: FooterProps) {
             </h3>
             <ul className="space-y-2 text-sm text-slate-600">
               <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/vs-bluebeam')}
-                  className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                <a
+                  href="/vs-bluebeam"
+                  onClick={(e) => handleLink(e, '/vs-bluebeam')}
+                  className="hover:text-[#1E40AF] transition-colors"
                 >
                   Bluebeam Compare Alternative
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/acrobat-alternative')}
-                  className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                <a
+                  href="/acrobat-alternative"
+                  onClick={(e) => handleLink(e, '/acrobat-alternative')}
+                  className="hover:text-[#1E40AF] transition-colors"
                 >
                   Adobe Acrobat Alternative
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/unclouded-addenda')}
-                  className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                <a
+                  href="/unclouded-addenda"
+                  onClick={(e) => handleLink(e, '/unclouded-addenda')}
+                  className="hover:text-[#1E40AF] transition-colors"
                 >
                   Unclouded Addendum Guide
-                </button>
+                </a>
               </li>
             </ul>
           </div>
@@ -100,16 +108,16 @@ export function Footer({ onNavigate }: FooterProps) {
             <ul className="space-y-2 text-sm text-slate-600">
               {TRADE_GUIDE_ROUTES.map((trade) => (
                 <li key={trade.route}>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate(trade.route)}
-                    className="hover:text-[#1E40AF] transition-colors cursor-pointer"
+                  <a
+                    href={trade.route}
+                    onClick={(e) => handleLink(e, trade.route)}
+                    className="hover:text-[#1E40AF] transition-colors"
                   >
                     <span className="font-mono text-xs text-slate-500 mr-1.5 tabular-nums">
                       Div {trade.code}
                     </span>
                     {trade.label}
-                  </button>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -122,9 +130,30 @@ export function Footer({ onNavigate }: FooterProps) {
             <span aria-hidden="true">·</span>
             <span>Client-Side Web Worker PDF Engine</span>
             <span aria-hidden="true">·</span>
-            <span>Zero Server PDF Storage</span>
+            <span>No Server PDF Storage</span>
           </div>
-          <span>CSI MasterFormat Division Alignment</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <a
+              href="/privacy"
+              onClick={(e) => handleLink(e, '/privacy')}
+              className="hover:text-[#1E40AF] transition-colors"
+            >
+              Privacy Policy
+            </a>
+            <a
+              href="/terms"
+              onClick={(e) => handleLink(e, '/terms')}
+              className="hover:text-[#1E40AF] transition-colors"
+            >
+              Terms &amp; Verification
+            </a>
+            <a
+              href="mailto:support@specdelta.app"
+              className="hover:text-[#1E40AF] transition-colors"
+            >
+              support@specdelta.app
+            </a>
+          </div>
         </div>
       </div>
     </footer>

@@ -1,12 +1,12 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import * as pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs';
 import { getDivisionTitle, normalizeCsiCode } from '../utils/csiDictionary';
+import { stripHeadersAndFooters, type RawPageLine } from '../utils/noiseFilter';
 import {
   DEFAULT_NOISE_CONFIG,
   type CsiSection,
   type NoiseFilterConfig,
   type SingleSpecParseOutput,
-  type StrippedPattern,
   type WorkerProgress,
 } from '../types/spec';
 
@@ -23,12 +23,6 @@ const IMAGE_PAINT_OPS = new Set<number>([
   pdfjsLib.OPS.paintImageMaskXObjectRepeat,
   pdfjsLib.OPS.paintSolidColorImageMask,
 ]);
-
-interface RawPageLine {
-  page: number;
-  yPct: number;
-  text: string;
-}
 
 interface OutlineSectionHint {
   page: number;
@@ -56,22 +50,6 @@ function postProgress(
     requestId,
     payload: { stage, percent, detail } satisfies WorkerProgress,
   });
-}
-
-function normalizeForNoisePattern(line: string): string {
-  return line
-    .trim()
-    .replace(/\d+/g, '#')
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
-}
-
-function isStandalonePageNumber(line: string): boolean {
-  const t = line.trim();
-  return (
-    /^(?:page\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i.test(t) ||
-    /^\d{2}\s*\d{2}\s*\d{2}\s*[-–—]\s*\d{1,4}$/.test(t)
-  );
 }
 
 function matchCsiHeader(
@@ -216,6 +194,8 @@ async function extractLinesWithCoordinates(
         str: string;
         x: number;
         y: number;
+        width: number;
+        fontSize: number;
       }
 
       const spans: SpanItem[] = [];
@@ -224,10 +204,17 @@ async function extractLinesWithCoordinates(
           const str = rawItem.str;
           if (!str.trim()) continue;
           const tx = rawItem.transform;
+          const fontSize = Math.max(4, Math.hypot(tx[0], tx[1]) || 10);
+          const itemWidth =
+            'width' in rawItem && typeof rawItem.width === 'number' && rawItem.width > 0
+              ? rawItem.width
+              : str.length * fontSize * 0.5;
           spans.push({
             str,
             x: tx[4],
             y: tx[5],
+            width: itemWidth,
+            fontSize,
           });
         }
       }
@@ -250,16 +237,30 @@ async function extractLinesWithCoordinates(
         group.items.sort((a, b) => a.x - b.x);
         let lineText = '';
         let prevXEnd: number | null = null;
+        let prevFontSize = 10;
+        let prevHadTrailingSpace = false;
+
         for (const item of group.items) {
+          const hasLeadingSpace = /^\s/.test(item.str);
+          const hasTrailingSpace = /\s$/.test(item.str);
           const trimmed = item.str.trim();
           if (!trimmed) continue;
-          if (prevXEnd !== null && item.x - prevXEnd > 14 && !lineText.endsWith(' ')) {
-            lineText += ' ';
-          } else if (lineText && !lineText.endsWith(' ') && !trimmed.startsWith(' ')) {
-            lineText += ' ';
+
+          if (prevXEnd !== null) {
+            const gap = item.x - prevXEnd;
+            const spaceThreshold = Math.max(2.0, Math.min(prevFontSize, item.fontSize) * 0.25);
+            if (
+              (prevHadTrailingSpace || hasLeadingSpace || gap > spaceThreshold) &&
+              !lineText.endsWith(' ')
+            ) {
+              lineText += ' ';
+            }
           }
+
           lineText += trimmed;
-          prevXEnd = item.x + trimmed.length * 4.5;
+          prevXEnd = item.x + item.width;
+          prevFontSize = item.fontSize;
+          prevHadTrailingSpace = hasTrailingSpace;
         }
 
         lineText = lineText.replace(/\s+/g, ' ').trim();
@@ -296,74 +297,6 @@ async function extractLinesWithCoordinates(
   } finally {
     await loadingTask.destroy();
   }
-}
-
-function stripHeadersAndFooters(
-  lines: RawPageLine[],
-  pageCount: number,
-  noiseConfig: NoiseFilterConfig
-): { cleanLines: RawPageLine[]; strippedPatterns: StrippedPattern[] } {
-  const topThreshold = noiseConfig.edgeMarginPct;
-  const bottomThreshold = 1 - noiseConfig.edgeMarginPct;
-  const minRecurrence = noiseConfig.minRecurrencePct;
-
-  const patternMap = new Map<
-    string,
-    { pages: Set<number>; sample: string; zone: 'header' | 'footer' }
-  >();
-
-  for (const line of lines) {
-    const zone =
-      line.yPct <= topThreshold ? 'header' : line.yPct >= bottomThreshold ? 'footer' : null;
-    if (!zone) continue;
-
-    const norm = normalizeForNoisePattern(line.text);
-    if (!norm) continue;
-
-    const entry = patternMap.get(norm);
-    if (entry) {
-      entry.pages.add(line.page);
-    } else {
-      patternMap.set(norm, {
-        pages: new Set([line.page]),
-        sample: line.text,
-        zone,
-      });
-    }
-  }
-
-  const noiseSet = new Set<string>();
-  const strippedPatterns: StrippedPattern[] = [];
-
-  for (const [pattern, info] of patternMap.entries()) {
-    const freqPct = Math.round((info.pages.size / Math.max(1, pageCount)) * 100);
-    const thresholdMet = pageCount >= 3 ? info.pages.size / pageCount > minRecurrence : false;
-    if (thresholdMet || isStandalonePageNumber(info.sample)) {
-      noiseSet.add(pattern);
-      strippedPatterns.push({
-        pattern,
-        sample: info.sample,
-        frequencyPct: freqPct,
-        pageHits: info.pages.size,
-        totalPages: pageCount,
-        zone: info.zone,
-      });
-    }
-  }
-
-  const cleanLines = lines.filter((line) => {
-    const inEdgeZone = line.yPct <= topThreshold || line.yPct >= bottomThreshold;
-    if (inEdgeZone) {
-      const norm = normalizeForNoisePattern(line.text);
-      if (noiseSet.has(norm) || isStandalonePageNumber(line.text)) {
-        return false;
-      }
-    }
-    return true;
-  });
-
-  strippedPatterns.sort((a, b) => b.frequencyPct - a.frequencyPct);
-  return { cleanLines, strippedPatterns };
 }
 
 function buildParagraphsFromLines(lines: string[]): string[] {

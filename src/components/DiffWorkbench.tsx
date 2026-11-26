@@ -102,12 +102,53 @@ function getOverlappingScannedPages(
   return scannedPages.filter((p) => p >= start && p <= end);
 }
 
+function getReviewStorageKey(
+  oldFileName: string,
+  oldPageCount: number,
+  newFileName: string,
+  newPageCount: number
+): string {
+  return `specdelta:reviewed:${oldFileName}:${oldPageCount}::${newFileName}:${newPageCount}`;
+}
+
+function readInitialQueryParams() {
+  if (typeof window === 'undefined') {
+    return {
+      section: null as string | null,
+      filter: 'changed' as StatusFilter,
+      div: 'all',
+      sort: 'risk' as 'risk' | 'csi',
+    };
+  }
+  const params = new URLSearchParams(window.location.search);
+  const rawFilter = params.get('filter');
+  const validFilters: StatusFilter[] = [
+    'all',
+    'changed',
+    'modified',
+    'added',
+    'deleted',
+    'unchanged',
+    'risk',
+  ];
+  const filter = validFilters.includes(rawFilter as StatusFilter)
+    ? (rawFilter as StatusFilter)
+    : 'changed';
+  const rawSort = params.get('sort');
+  const sort: 'risk' | 'csi' = rawSort === 'csi' ? 'csi' : 'risk';
+  const div = params.get('div') || 'all';
+  const section = params.get('section') || null;
+  return { section, filter, div, sort };
+}
+
 export function DiffWorkbench({
   onNavigate,
   externalSampleRequest,
   initialDivisionFilter = 'all',
   onBusyChange,
 }: DiffWorkbenchProps) {
+  const initialQuery = useMemo(() => readInitialQueryParams(), []);
+
   const [oldSlot, setOldSlot] = useState<FileSlotState>(EMPTY_SLOT);
   const [newSlot, setNewSlot] = useState<FileSlotState>(EMPTY_SLOT);
   const [fileProgressMap, setFileProgressMap] = useState<
@@ -120,13 +161,15 @@ export function DiffWorkbench({
   const [diffOutput, setDiffOutput] = useState<DiffRunOutput | null>(null);
   const [heroExpanded, setHeroExpanded] = useState(true);
 
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('changed');
-  const [divisionFilter, setDivisionFilter] = useState<string>(initialDivisionFilter);
+  const [selectedCode, setSelectedCode] = useState<string | null>(initialQuery.section);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialQuery.filter);
+  const [divisionFilter, setDivisionFilter] = useState<string>(
+    initialDivisionFilter !== 'all' ? initialDivisionFilter : initialQuery.div
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [showFullSection, setShowFullSection] = useState(false);
   const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>('inline');
-  const [sortBy, setSortBy] = useState<'risk' | 'csi'>('risk');
+  const [sortBy, setSortBy] = useState<'risk' | 'csi'>(initialQuery.sort);
   const [showNoiseDrawer, setShowNoiseDrawer] = useState(false);
   const [noiseConfig, setNoiseConfig] = useState<NoiseFilterConfig>(DEFAULT_NOISE_CONFIG);
   const [reviewedCodes, setReviewedCodes] = useState<Set<string>>(() => new Set());
@@ -176,6 +219,42 @@ export function DiffWorkbench({
     };
   }, []);
 
+  const activeReviewStorageKey = useMemo(() => {
+    if (!diffOutput) return null;
+    return getReviewStorageKey(
+      diffOutput.diagnostics.oldFileName,
+      diffOutput.diagnostics.oldPageCount,
+      diffOutput.diagnostics.newFileName,
+      diffOutput.diagnostics.newPageCount
+    );
+  }, [diffOutput]);
+
+  useEffect(() => {
+    if (!activeReviewStorageKey) return;
+    try {
+      window.localStorage.setItem(
+        activeReviewStorageKey,
+        JSON.stringify(Array.from(reviewedCodes))
+      );
+    } catch {
+      // Ignore storage quota or private-mode errors gracefully
+    }
+  }, [activeReviewStorageKey, reviewedCodes]);
+
+  useEffect(() => {
+    if (window.location.pathname !== '/' || !diffOutput) return;
+    const params = new URLSearchParams();
+    if (selectedCode) params.set('section', selectedCode);
+    if (statusFilter !== 'changed') params.set('filter', statusFilter);
+    if (divisionFilter !== 'all') params.set('div', divisionFilter);
+    if (sortBy !== 'risk') params.set('sort', sortBy);
+    const qs = params.toString();
+    const nextUrl = qs ? `/?${qs}` : '/';
+    if (window.location.pathname + window.location.search !== nextUrl) {
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [diffOutput, selectedCode, statusFilter, divisionFilter, sortBy]);
+
   // Yield to paint 100% worker state before running section-to-section Myers diff
   useEffect(() => {
     if (
@@ -189,6 +268,33 @@ export function DiffWorkbench({
       setIsDiffing(true);
       const timerId = window.setTimeout(() => {
         const output = compareParsedBooks(oldParsed, newParsed);
+        const pairKey = getReviewStorageKey(
+          output.diagnostics.oldFileName,
+          output.diagnostics.oldPageCount,
+          output.diagnostics.newFileName,
+          output.diagnostics.newPageCount
+        );
+        let restoredReviewed = new Set<string>();
+        try {
+          const savedRaw = window.localStorage.getItem(pairKey);
+          if (savedRaw) {
+            const parsedSaved = JSON.parse(savedRaw);
+            if (Array.isArray(parsedSaved)) {
+              const validCodes = new Set(output.results.map((r) => r.sectionCode));
+              restoredReviewed = new Set(
+                parsedSaved.filter(
+                  (c): c is string => typeof c === 'string' && validCodes.has(c)
+                )
+              );
+            }
+          }
+        } catch {
+          restoredReviewed = new Set<string>();
+        }
+        setReviewedCodes((prev) =>
+          skipScrollOnNextDiffRef.current && prev.size > 0 ? prev : restoredReviewed
+        );
+
         setDiffOutput(output);
         const changed = output.results.filter((r) => r.status !== 'unchanged');
         const topRisk = [...changed]
@@ -201,16 +307,16 @@ export function DiffWorkbench({
           )[0];
         const firstTarget = topRisk ?? changed[0] ?? output.results[0] ?? null;
         setSelectedCode((prev) =>
-          skipScrollOnNextDiffRef.current &&
-          prev &&
-          output.results.some((r) => r.sectionCode === prev)
+          prev && output.results.some((r) => r.sectionCode === prev)
             ? prev
             : firstTarget
             ? firstTarget.sectionCode
             : null
         );
         if (!skipScrollOnNextDiffRef.current) {
-          setStatusFilter(changed.length > 0 ? 'changed' : 'all');
+          setStatusFilter((prev) =>
+            changed.length > 0 ? prev : 'all'
+          );
           setShowFullSection(false);
           setHeroExpanded(false);
           window.requestAnimationFrame(() => {
@@ -1232,7 +1338,7 @@ export function DiffWorkbench({
                       Compare 600-Page Project Manuals by CSI Section—Not Page Number
                     </h1>
                     <p className="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed max-w-xl">
-                      Stop Bluebeam from flagging 200+ pages red when an addendum pushes text across page breaks. SpecDelta parses PDFs locally in a Web Worker, strips repeating headers, and surfaces money and risk shifts cleanly.
+                      Stop visual page-overlay diffs from flagging hundreds of shifted pages when an addendum moves paragraphs across page breaks. SpecDelta parses PDFs locally in a Web Worker, strips repeating headers, and surfaces money and risk shifts cleanly.
                     </p>
                   </div>
 
@@ -1473,7 +1579,7 @@ export function DiffWorkbench({
                     </div>
                     <div>
                       <div className="font-mono text-lg font-bold text-[#1E40AF] tabular-nums">
-                        100% Local
+                        Local Worker
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5">
                         Off-thread Web Worker PDF parsing
@@ -1483,21 +1589,31 @@ export function DiffWorkbench({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('/split-spec-book')}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] drafting-transition whitespace-nowrap shrink-0 cursor-pointer"
+                  <a
+                    href="/split-spec-book"
+                    onClick={(e) => {
+                      if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                        e.preventDefault();
+                        onNavigate('/split-spec-book');
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] drafting-transition whitespace-nowrap shrink-0"
                   >
                     Open Spec Book Splitter
                     <ArrowRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('/benchmark')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 drafting-transition whitespace-nowrap shrink-0 cursor-pointer"
+                  </a>
+                  <a
+                    href="/benchmark"
+                    onClick={(e) => {
+                      if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                        e.preventDefault();
+                        onNavigate('/benchmark');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 drafting-transition whitespace-nowrap shrink-0"
                   >
-                    View 500-Page Benchmark
-                  </button>
+                    View Sample Benchmark
+                  </a>
                 </div>
               </div>
             </div>
@@ -1744,6 +1860,45 @@ export function DiffWorkbench({
                   <Sparkles className="w-3.5 h-3.5 text-[#B45309]" />
                   {aiBriefEnabled ? 'Hide Gemini Brief' : 'Opt-In Gemini Brief'}
                 </button>
+              </div>
+            </div>
+
+            {/* Parse Coverage & Bid-Day Verification Notice */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 tabular-nums">
+                <span className="font-mono font-semibold text-slate-800">
+                  Parse coverage: {diffOutput.diagnostics.oldSectionCount} CSI sections ({diffOutput.diagnostics.oldPageCount} pp.) vs. {diffOutput.diagnostics.newSectionCount} CSI sections ({diffOutput.diagnostics.newPageCount} pp.)
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Automated diff aid — verify critical pricing, tolerances, and scope terms against the signed Addendum PDF.
+                </span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {reviewedChangedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewedCodes(new Set());
+                      setLiveAnnouncement('Cleared saved review checkmarks for this pair.');
+                    }}
+                    className="text-slate-600 hover:text-[#B91C1C] underline underline-offset-2 cursor-pointer"
+                  >
+                    Reset reviewed ({reviewedChangedCount})
+                  </button>
+                )}
+                <a
+                  href="/terms"
+                  onClick={(e) => {
+                    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                      e.preventDefault();
+                      onNavigate('/terms');
+                    }
+                  }}
+                  className="text-[#1E40AF] font-medium hover:underline"
+                >
+                  Verification standard
+                </a>
               </div>
             </div>
 

@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { Menu, X } from 'lucide-react';
 import type { AppRoute } from '../types/spec';
 
 interface TopNavProps {
-  currentRoute: AppRoute;
+  currentRoute: AppRoute | null;
   onNavigate: (route: AppRoute) => void;
   onLoadSample: () => void;
   isBusy: boolean;
@@ -36,42 +36,52 @@ export function TopNav({ currentRoute, onNavigate, onLoadSample, isBusy }: TopNa
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isActive = (item: (typeof NAV_ITEMS)[number]) => {
+    if (!currentRoute) return false;
     if (currentRoute === item.route) return true;
     return item.matchPrefixes?.includes(currentRoute) ?? false;
+  };
+
+  const handleLinkClick = (
+    e: MouseEvent<HTMLAnchorElement>,
+    route: AppRoute,
+    closeMenu?: boolean
+  ) => {
+    if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+      e.preventDefault();
+      onNavigate(route);
+      if (closeMenu) setMobileOpen(false);
+    }
   };
 
   return (
     <header className="no-print sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-slate-200">
       <div className="max-w-[1380px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-8">
         {/* Zone 1: Single-line brand wordmark */}
-        <button
-          type="button"
-          onClick={() => {
-            onNavigate('/');
-            setMobileOpen(false);
-          }}
-          className="font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 hover:text-[#1E40AF] transition-colors cursor-pointer"
+        <a
+          href="/"
+          onClick={(e) => handleLinkClick(e, '/', true)}
+          className="font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 hover:text-[#1E40AF] transition-colors"
         >
           SpecDelta
-        </button>
+        </a>
 
         {/* Zone 2: 5 concise single-line nav links */}
         <nav className="hidden md:flex items-center gap-6" aria-label="Primary">
           {NAV_ITEMS.map((item) => {
             const active = isActive(item);
             return (
-              <button
+              <a
                 key={item.route}
-                type="button"
-                onClick={() => onNavigate(item.route)}
-                className={`text-sm font-medium whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
+                href={item.route}
+                onClick={(e) => handleLinkClick(e, item.route)}
+                className={`text-sm font-medium whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors ${
                   active
                     ? 'text-[#1E40AF] border-[#1E40AF]'
                     : 'text-slate-600 border-transparent hover:text-slate-900 hover:border-slate-300'
                 }`}
               >
                 {item.label}
-              </button>
+              </a>
             );
           })}
         </nav>
@@ -105,13 +115,10 @@ export function TopNav({ currentRoute, onNavigate, onLoadSample, isBusy }: TopNa
       {mobileOpen && (
         <div className="md:hidden border-t border-slate-200 bg-white px-4 py-3 space-y-1">
           {NAV_ITEMS.map((item) => (
-            <button
+            <a
               key={item.route}
-              type="button"
-              onClick={() => {
-                onNavigate(item.route);
-                setMobileOpen(false);
-              }}
+              href={item.route}
+              onClick={(e) => handleLinkClick(e, item.route, true)}
               className={`block w-full text-left px-3 py-2.5 rounded-md text-sm font-medium ${
                 isActive(item)
                   ? 'bg-blue-50 text-[#1E40AF]'
@@ -119,7 +126,7 @@ export function TopNav({ currentRoute, onNavigate, onLoadSample, isBusy }: TopNa
               }`}
             >
               {item.label}
-            </button>
+            </a>
           ))}
           <button
             type="button"
@@ -128,7 +135,7 @@ export function TopNav({ currentRoute, onNavigate, onLoadSample, isBusy }: TopNa
               onLoadSample();
               setMobileOpen(false);
             }}
-            className="w-full mt-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] disabled:opacity-50"
+            className="w-full mt-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] disabled:opacity-50 cursor-pointer"
           >
             Load Sample Spec
           </button>
