@@ -95,6 +95,10 @@ export interface ParseDiagnostics {
   newSectionCount: number;
   oldStrippedPatterns: StrippedPattern[];
   newStrippedPatterns: StrippedPattern[];
+  oldStrippedLineCount?: number;
+  newStrippedLineCount?: number;
+  oldContentHash?: string;
+  newContentHash?: string;
   parseTimeMs: number;
   scannedWarning: boolean;
   oldScannedPages?: number[];
@@ -116,6 +120,7 @@ export interface SingleSpecParseOutput {
   pageCount: number;
   sections: CsiSection[];
   strippedPatterns: StrippedPattern[];
+  strippedLineCount?: number;
   parseTimeMs: number;
   scannedWarning: boolean;
   scannedPages?: number[];

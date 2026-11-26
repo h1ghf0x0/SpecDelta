@@ -1,5 +1,6 @@
 import DiffMatchPatch from 'diff-match-patch';
 import {
+  detectDeltaRiskFlags,
   detectRiskFlags,
   extractContextRiskMatch,
   extractParagraphDeltaChips,
@@ -228,9 +229,7 @@ function diffSectionParagraphs(oldParas: string[], newParas: string[]): {
         const { tokens, addedWords, deletedWords } = computeWordDiff(oldT, newT);
         totalAdded += addedWords;
         totalDeleted += deletedWords;
-        const riskFlags = Array.from(
-          new Set([...detectRiskFlags(oldT), ...detectRiskFlags(newT)])
-        );
+        const riskFlags = detectDeltaRiskFlags(tokens, oldT, newT);
         const deltaChips = extractParagraphDeltaChips(oldT, newT);
         const ctxIdx = Math.min(Math.max(0, newCursor + newOffset), Math.max(0, newParas.length - 1));
         changedParagraphs.push({
@@ -384,12 +383,37 @@ function buildPairedSectionResult(
   };
 }
 
+export function computeSpecContentHash(sections: CsiSection[]): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  const feed = (str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      h1 ^= code;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= code + ((i & 0xff) << 3);
+      h2 = Math.imul(h2, 0x85ebca6b);
+    }
+  };
+  for (const sec of sections) {
+    feed(sec.normalizedCode);
+    feed('|');
+    feed(sec.title);
+    feed('|');
+    feed(sec.text);
+    feed('\n');
+  }
+  return `${(h1 >>> 0).toString(16).padStart(8, '0')}${(h2 >>> 0).toString(16).padStart(8, '0')}`;
+}
+
 export function compareParsedBooks(
   oldBook: SingleSpecParseOutput,
   newBook: SingleSpecParseOutput
 ): DiffRunOutput {
   const diffStart = performance.now();
 
+  const oldContentHash = computeSpecContentHash(oldBook.sections);
+  const newContentHash = computeSpecContentHash(newBook.sections);
   const oldMostlyScanned = Boolean(oldBook.isMostlyScanned);
   const newMostlyScanned = Boolean(newBook.isMostlyScanned);
 
@@ -405,6 +429,10 @@ export function compareParsedBooks(
         newSectionCount: newBook.sections.length,
         oldStrippedPatterns: oldBook.strippedPatterns,
         newStrippedPatterns: newBook.strippedPatterns,
+        oldStrippedLineCount: oldBook.strippedLineCount ?? 0,
+        newStrippedLineCount: newBook.strippedLineCount ?? 0,
+        oldContentHash,
+        newContentHash,
         parseTimeMs: Math.max(oldBook.parseTimeMs, newBook.parseTimeMs),
         scannedWarning: true,
         oldScannedPages: oldBook.scannedPages ?? [],
@@ -551,6 +579,10 @@ export function compareParsedBooks(
       newSectionCount: newBook.sections.length,
       oldStrippedPatterns: oldBook.strippedPatterns,
       newStrippedPatterns: newBook.strippedPatterns,
+      oldStrippedLineCount: oldBook.strippedLineCount ?? 0,
+      newStrippedLineCount: newBook.strippedLineCount ?? 0,
+      oldContentHash,
+      newContentHash,
       parseTimeMs: totalParseMs,
       scannedWarning: oldBook.scannedWarning || newBook.scannedWarning,
       oldScannedPages: oldBook.scannedPages ?? [],

@@ -1,39 +1,33 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { DiffWorkbench } from './components/DiffWorkbench';
 import { Footer } from './components/Footer';
-import { SeoContentPage } from './components/SeoContentPage';
-import { SpecSplitter } from './components/SpecSplitter';
 import { TopNav } from './components/TopNav';
-import { SEO_PAGES } from './data/seoContent';
+import { SEO_ROUTE_META, VALID_APP_ROUTES } from './data/seoRoutesMeta';
 import type { AppRoute } from './types/spec';
 
-const VALID_ROUTES = new Set<AppRoute>([
-  '/',
-  '/split-spec-book',
-  '/vs-bluebeam',
-  '/acrobat-alternative',
-  '/unclouded-addenda',
-  '/benchmark',
-  '/compare-division-03-concrete-specs',
-  '/compare-division-07-thermal-moisture-specs',
-  '/compare-division-08-doors-hardware-specs',
-  '/compare-division-09-finishes-specs',
-  '/compare-division-23-hvac-specs',
-  '/compare-division-26-electrical-specs',
-  '/privacy',
-  '/terms',
-]);
+const SpecSplitter = lazy(() =>
+  import('./components/SpecSplitter').then((mod) => ({ default: mod.SpecSplitter }))
+);
+const SeoContentPage = lazy(() =>
+  import('./components/SeoContentPage').then((mod) => ({ default: mod.SeoContentPage }))
+);
 
 function normalizeRoute(pathname: string): AppRoute | null {
   const clean = pathname.replace(/\/+$/, '') || '/';
-  return VALID_ROUTES.has(clean as AppRoute) ? (clean as AppRoute) : null;
+  return VALID_APP_ROUTES.has(clean as AppRoute) ? (clean as AppRoute) : null;
 }
 
-function updateDocumentSeo(route: AppRoute | null) {
-  let title = 'SpecDelta – Section-Aware Construction Spec Diff & CSI Splitter';
-  let description =
-    'Compare 600-page Project Manuals and Addenda locally in your browser by CSI section—no page-shift false positives, instant Excel redlines, and CSI PDF splitting.';
-  let robotsContent = 'index, follow';
+async function updateDocumentSeo(route: AppRoute | null) {
+  const baseMeta = route
+    ? SEO_ROUTE_META[route]
+    : {
+        title: 'Page Not Found (404) | SpecDelta',
+        description: 'The requested SpecDelta page could not be found.',
+      };
+
+  const title = baseMeta.title;
+  const description = baseMeta.description;
+  const robotsContent = route === null ? 'noindex, nofollow' : 'index, follow';
 
   const schemas: unknown[] = [
     {
@@ -51,14 +45,7 @@ function updateDocumentSeo(route: AppRoute | null) {
     },
   ];
 
-  if (route === null) {
-    title = 'Page Not Found (404) | SpecDelta';
-    description = 'The requested SpecDelta page could not be found.';
-    robotsContent = 'noindex, nofollow';
-  } else if (route === '/split-spec-book') {
-    title = 'Free CSI MasterFormat Spec Book Splitter | SpecDelta';
-    description =
-      'Upload an 800-page construction Project Manual PDF and extract only your CSI Division or sections into a clean standalone PDF locally in your browser.';
+  if (route === '/split-spec-book') {
     schemas.push({
       '@context': 'https://schema.org',
       '@type': 'HowTo',
@@ -81,32 +68,33 @@ function updateDocumentSeo(route: AppRoute | null) {
         },
       ],
     });
-  } else if (route !== '/' && route in SEO_PAGES) {
-    const cfg = SEO_PAGES[route];
-    title = cfg.metaTitle;
-    description = cfg.metaDescription;
-    schemas.push({
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: cfg.faqs.map((f) => ({
-        '@type': 'Question',
-        name: f.question,
-        acceptedAnswer: {
-          '@type': 'Answer',
-          text: f.answer,
-        },
-      })),
-    });
-    schemas.push({
-      '@context': 'https://schema.org',
-      '@type': 'HowTo',
-      name: cfg.headline,
-      step: cfg.howToSteps.map((s) => ({
-        '@type': 'HowToStep',
-        name: s.step,
-        text: s.description,
-      })),
-    });
+  } else if (route !== null && route !== '/') {
+    const { SEO_PAGES } = await import('./data/seoContent');
+    if (route in SEO_PAGES) {
+      const cfg = SEO_PAGES[route];
+      schemas.push({
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: cfg.faqs.map((f) => ({
+          '@type': 'Question',
+          name: f.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: f.answer,
+          },
+        })),
+      });
+      schemas.push({
+        '@context': 'https://schema.org',
+        '@type': 'HowTo',
+        name: cfg.headline,
+        step: cfg.howToSteps.map((s) => ({
+          '@type': 'HowToStep',
+          name: s.step,
+          text: s.description,
+        })),
+      });
+    }
   }
 
   document.title = title;
@@ -120,6 +108,27 @@ function updateDocumentSeo(route: AppRoute | null) {
   setMeta('meta[name="twitter:title"]', title);
   setMeta('meta[name="twitter:description"]', description);
 
+  const canonicalHref = route ? `${window.location.origin}${route}` : '';
+  let canonicalEl = document.querySelector('link[rel="canonical"]');
+  if (canonicalHref) {
+    if (!canonicalEl) {
+      canonicalEl = document.createElement('link');
+      canonicalEl.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalEl);
+    }
+    canonicalEl.setAttribute('href', canonicalHref);
+
+    let ogUrl = document.querySelector('meta[property="og:url"]');
+    if (!ogUrl) {
+      ogUrl = document.createElement('meta');
+      ogUrl.setAttribute('property', 'og:url');
+      document.head.appendChild(ogUrl);
+    }
+    ogUrl.setAttribute('content', canonicalHref);
+  } else if (canonicalEl) {
+    canonicalEl.remove();
+  }
+
   let robotsMeta = document.querySelector('meta[name="robots"]');
   if (!robotsMeta) {
     robotsMeta = document.createElement('meta');
@@ -132,6 +141,16 @@ function updateDocumentSeo(route: AppRoute | null) {
   if (schemaScript) {
     schemaScript.textContent = JSON.stringify(schemas);
   }
+}
+
+function RouteFallback() {
+  return (
+    <div className="max-w-[1380px] mx-auto px-4 sm:px-6 py-16">
+      <div className="bg-white border border-slate-200 rounded-lg p-6 text-sm text-slate-600">
+        Loading view...
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -151,7 +170,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    updateDocumentSeo(route);
+    void updateDocumentSeo(route);
   }, [route]);
 
   const navigate = (nextRoute: AppRoute, divisionCode?: string) => {
@@ -192,7 +211,9 @@ export default function App() {
         {route === null ? (
           <section className="max-w-[1380px] mx-auto px-4 sm:px-6 py-20">
             <div className="max-w-xl bg-white border border-slate-200 rounded-lg p-8 space-y-4">
-              <div className="font-mono text-xs font-semibold text-[#B91C1C]">HTTP 404 · Route Not Found</div>
+              <div className="font-mono text-xs font-semibold text-[#B91C1C]">
+                HTTP 404 · Route Not Found
+              </div>
               <h1 className="font-display text-2xl font-bold text-slate-900">
                 That SpecDelta page does not exist.
               </h1>
@@ -235,13 +256,17 @@ export default function App() {
             onBusyChange={setIsBusy}
           />
         ) : route === '/split-spec-book' ? (
-          <SpecSplitter onNavigateWithDivision={(r, div) => navigate(r, div)} />
+          <Suspense fallback={<RouteFallback />}>
+            <SpecSplitter onNavigateWithDivision={(r, div) => navigate(r, div)} />
+          </Suspense>
         ) : (
-          <SeoContentPage
-            route={route}
-            onNavigate={(r, div) => navigate(r, div)}
-            onRunSampleDiff={(div) => handleLoadSampleFromAnywhere(div)}
-          />
+          <Suspense fallback={<RouteFallback />}>
+            <SeoContentPage
+              route={route}
+              onNavigate={(r, div) => navigate(r, div)}
+              onRunSampleDiff={(div) => handleLoadSampleFromAnywhere(div)}
+            />
+          </Suspense>
         )}
       </main>
 

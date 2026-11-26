@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
+import { SEO_ROUTE_META, VALID_APP_ROUTES } from './src/data/seoRoutesMeta';
+import type { AppRoute } from './src/types/spec';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +22,98 @@ interface SectionDiffInput {
   title: string;
   status: 'modified' | 'added' | 'deleted';
   changedParagraphs: ChangedParagraphInput[];
+}
+
+function escapeHtmlAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function isHtmlNavigationRequest(req: express.Request): boolean {
+  if (req.method !== 'GET') return false;
+  const reqPath = req.path;
+  if (
+    reqPath.startsWith('/api/') ||
+    reqPath === '/api' ||
+    reqPath.startsWith('/src/') ||
+    reqPath.startsWith('/@') ||
+    reqPath.startsWith('/node_modules/') ||
+    reqPath.startsWith('/assets/')
+  ) {
+    return false;
+  }
+  if (path.extname(reqPath)) return false;
+  const accept = req.headers.accept ?? '';
+  return !accept || accept.includes('text/html') || accept.includes('*/*');
+}
+
+function renderRouteSeoHtml(
+  templateHtml: string,
+  reqPath: string,
+  origin: string
+): { status: number; html: string } {
+  const cleanPath = reqPath.replace(/\/+$/, '') || '/';
+  const isValid = VALID_APP_ROUTES.has(cleanPath as AppRoute);
+  const status = isValid ? 200 : 404;
+
+  const meta = isValid
+    ? SEO_ROUTE_META[cleanPath as AppRoute]
+    : {
+        title: 'Page Not Found (404) | SpecDelta',
+        description: 'The requested SpecDelta page could not be found.',
+        h1: '404 — Route Not Found',
+        summary:
+          'That SpecDelta page does not exist. Return to the Spec Diff Checker or CSI Spec Book Splitter.',
+      };
+
+  const titleEsc = escapeHtmlAttr(meta.title);
+  const descEsc = escapeHtmlAttr(meta.description);
+  const robotsContent = isValid ? 'index, follow' : 'noindex, nofollow';
+  const canonicalUrl = isValid ? escapeHtmlAttr(`${origin}${cleanPath}`) : '';
+
+  let html = templateHtml
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${titleEsc}</title>`)
+    .replace(
+      /<meta\s+name="description"[\s\S]*?\/>/i,
+      `<meta name="description" content="${descEsc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:title"[\s\S]*?\/>/i,
+      `<meta property="og:title" content="${titleEsc}" />`
+    )
+    .replace(
+      /<meta\s+property="og:description"[\s\S]*?\/>/i,
+      `<meta property="og:description" content="${descEsc}" />`
+    )
+    .replace(
+      /<meta\s+name="twitter:title"[\s\S]*?\/>/i,
+      `<meta name="twitter:title" content="${titleEsc}" />`
+    )
+    .replace(
+      /<meta\s+name="twitter:description"[\s\S]*?\/>/i,
+      `<meta name="twitter:description" content="${descEsc}" />`
+    );
+
+  const extraHeadTags = [
+    `<meta name="robots" content="${robotsContent}" />`,
+    ...(canonicalUrl
+      ? [
+          `<meta property="og:url" content="${canonicalUrl}" />`,
+          `<link rel="canonical" href="${canonicalUrl}" />`,
+        ]
+      : []),
+  ].join('\n    ');
+
+  html = html.replace('</head>', `    ${extraHeadTags}\n  </head>`);
+
+  const noscriptBlock = `<div id="root"><noscript><main style="font-family:sans-serif;max-width:780px;margin:40px auto;padding:0 16px"><h1>${escapeHtmlAttr(meta.h1)}</h1><p>${escapeHtmlAttr(meta.summary)}</p><nav><a href="/">Spec Diff Checker</a> · <a href="/split-spec-book">CSI Spec Splitter</a> · <a href="/vs-bluebeam">SpecDelta vs Bluebeam</a> · <a href="/benchmark">Benchmark</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></nav></main></noscript></div>`;
+  html = html.replace(/<div id="root"><\/div>/i, noscriptBlock);
+
+  return { status, html };
 }
 
 const app = express();
@@ -197,17 +291,52 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: 'spa',
     });
+
+    app.use(async (req, res, next) => {
+      if (!isHtmlNavigationRequest(req)) {
+        return next();
+      }
+      try {
+        const indexPath = path.resolve(__dirname, 'index.html');
+        const rawTemplate = fs.readFileSync(indexPath, 'utf-8');
+        const transformed = await vite.transformIndexHtml(req.originalUrl, rawTemplate);
+        const protocol =
+          req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol || 'http';
+        const host = req.get('host') || `localhost:${PORT}`;
+        const { status, html } = renderRouteSeoHtml(transformed, req.path, `${protocol}://${host}`);
+        res.status(status).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(html);
+      } catch (err) {
+        vite.ssrFixStacktrace(err as Error);
+        next(err);
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(__dirname, 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
-      const indexFile = path.join(distDir, 'index.html');
-      if (fs.existsSync(indexFile)) {
-        res.sendFile(indexFile);
-      } else {
-        res.status(404).send('Build output not found.');
+    const indexFile = path.join(distDir, 'index.html');
+    const cachedTemplate = fs.existsSync(indexFile) ? fs.readFileSync(indexFile, 'utf-8') : null;
+
+    app.use(express.static(distDir, { index: false }));
+
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api/')) {
+        res.status(404).json({ error: 'API route not found.' });
+        return;
       }
+      if (path.extname(req.path)) {
+        res.status(404).send('Not found.');
+        return;
+      }
+      if (!cachedTemplate) {
+        res.status(404).send('Build output not found.');
+        return;
+      }
+      const protocol =
+        req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol || 'https';
+      const host = req.get('host') || 'specdelta.app';
+      const { status, html } = renderRouteSeoHtml(cachedTemplate, req.path, `${protocol}://${host}`);
+      res.status(status).set({ 'Content-Type': 'text/html; charset=utf-8' }).end(html);
     });
   }
 

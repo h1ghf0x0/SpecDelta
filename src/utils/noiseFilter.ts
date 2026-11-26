@@ -23,34 +23,36 @@ export function isStandalonePageNumber(line: string): boolean {
 }
 
 /**
- * Matches section-scoped running headers/footers that vary per CSI section
+ * Strictly matches short, non-sentence section-scoped running headers/footers
+ * containing a CSI MasterFormat code or SECTION/DIVISION prefix paired with a page indicator
  * (e.g., "CAST-IN-PLACE CONCRETE 033000 - 5", "08 71 00 - DOOR HARDWARE - Page 4 of 12",
- * "SECTION 26 24 13 - PAGE 3", "DIVISION 03 - 14") so they are stripped even when
- * a section only spans 2-10% of the Project Manual.
+ * "SECTION 26 24 13 - PAGE 2", "DIVISION 03 - 14").
+ * Rejects prose sentences (e.g., "Warranty period shall be 5 years. See page 12") so body
+ * specification text in lower page margins is never silently dropped.
  */
 export function isSectionPageStamp(line: string): boolean {
   const t = line.trim();
-  if (!t || t.length > 140) return false;
+  if (!t || t.length > 80) return false;
+  if (t.split(/\s+/).length > 12) return false;
 
-  // Pattern A: <Title or Prefix> <CSI Code> - <Page> (e.g. "CAST-IN-PLACE CONCRETE 033000 - 5")
+  // Reject prose sentences (semicolons, question/exclamation marks, or sentence periods)
+  if (/[;?!]/.test(t)) return false;
+  if (/[a-z]\.\s+[A-Za-z]/.test(t) || /\.$/.test(t)) return false;
+
+  // Pattern A: <Title or Prefix> <CSI Code> - [Page] <Num> (e.g. "CAST-IN-PLACE CONCRETE 033000 - 5")
   const titleThenCsiPage =
-    /^(?:SECTION\s+)?[A-Z0-9][A-Z0-9\s,&/().'-]{2,}?\s+\d{2}\s*\d{2}\s*\d{2}(?:\.\d{2})?\s*(?:[-–—|•]\s*|\s+)(?:PAGE\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
+    /^(?:SECTION\s+)?[A-Z0-9][A-Z0-9\s,&/()-]{1,55}?\s+\d{2}\s*\d{2}\s*\d{2}(?:\.\d{2})?\s*(?:[-–—|•]\s*|\s+)(?:PAGE\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
   if (titleThenCsiPage.test(t)) return true;
 
   // Pattern B: [SECTION] <CSI Code> [Title] - [Page] <Num> (e.g. "08 71 00 - DOOR HARDWARE - Page 4 of 12")
   const csiThenPage =
-    /^(?:SECTION\s+)?\d{2}\s*\d{2}\s*\d{2}(?:\.\d{2})?(?:\s*[-–—:]\s*[A-Za-z0-9\s,&/().'-]{2,})?\s*(?:[-–—|•]\s*|\s+)(?:PAGE\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
+    /^(?:SECTION\s+)?\d{2}\s*\d{2}\s*\d{2}(?:\.\d{2})?(?:\s*[-–—:]\s*[A-Za-z0-9\s,&/()-]{2,48})?\s*(?:[-–—|•]\s*|\s+)(?:PAGE\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
   if (csiThenPage.test(t)) return true;
 
-  // Pattern C: Division / Addendum stamp with explicit page number in edge margin
+  // Pattern C: Division / Addendum stamp with explicit page number
   const divPage =
-    /^(?:DIVISION\s+\d{1,2}|ADDENDUM\s+(?:NO\.?\s*)?\d+)\b.*?(?:[-–—|•]\s*|\s+)PAGE\s*\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
+    /^(?:DIVISION\s+\d{1,2}|ADDENDUM\s+(?:NO\.?\s*)?\d+)\b.{0,45}?(?:[-–—|•]\s*|\s+)(?:PAGE\s*)?\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
   if (divPage.test(t)) return true;
-
-  // Pattern D: Explicit "... - Page X of Y" or "... | Page X" running footer
-  const trailingExplicitPage =
-    /^.{4,}?\s*(?:[-–—|•]\s*|\s+)PAGE\s+\d{1,4}(?:\s*(?:of|\/)\s*\d{1,4})?$/i;
-  if (trailingExplicitPage.test(t)) return true;
 
   return false;
 }
@@ -59,7 +61,7 @@ export function stripHeadersAndFooters(
   lines: RawPageLine[],
   pageCount: number,
   noiseConfig: NoiseFilterConfig
-): { cleanLines: RawPageLine[]; strippedPatterns: StrippedPattern[] } {
+): { cleanLines: RawPageLine[]; strippedPatterns: StrippedPattern[]; strippedLineCount: number } {
   const topThreshold = noiseConfig.edgeMarginPct;
   const bottomThreshold = 1 - noiseConfig.edgeMarginPct;
   const minRecurrence = noiseConfig.minRecurrencePct;
@@ -127,5 +129,9 @@ export function stripHeadersAndFooters(
   });
 
   strippedPatterns.sort((a, b) => b.frequencyPct - a.frequencyPct || b.pageHits - a.pageHits);
-  return { cleanLines, strippedPatterns };
+  return {
+    cleanLines,
+    strippedPatterns,
+    strippedLineCount: lines.length - cleanLines.length,
+  };
 }

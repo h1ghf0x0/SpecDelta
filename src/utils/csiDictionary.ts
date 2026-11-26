@@ -49,7 +49,6 @@ export function normalizeCsiCode(raw: string): string {
     return `${mainDigits.slice(0, 2)} ${mainDigits.slice(2, 4)} ${mainDigits.slice(4, 6)}${suffix}`;
   }
   if (mainDigits.length === 5) {
-    // Legacy 5-digit format e.g. 08710 -> 08 71 00
     return `${mainDigits.slice(0, 2)} ${mainDigits.slice(2, 4)} ${mainDigits.slice(4, 5)}0${suffix}`;
   }
   return cleaned;
@@ -61,6 +60,11 @@ export interface RiskPattern {
   regex: RegExp;
 }
 
+/**
+ * Note: Bare modal verbs ("shall", "must", "may", "should") are intentionally omitted here so
+ * background boilerplate never inflates risk flags on typo fixes or calendar dates ("May 14").
+ * Modal directive shifts are surfaced strictly on changed tokens via extractDirectiveDelta().
+ */
 export const RISK_PATTERNS: RiskPattern[] = [
   {
     label: 'PSI / Strength / AIC',
@@ -108,9 +112,9 @@ export const RISK_PATTERNS: RiskPattern[] = [
     regex: /\b(?:basis\s+of\s+design|approved\s+equal|or\s+equal|no\s+substitutions?|sole\s+source)\b/gi,
   },
   {
-    label: 'Contractual Directive',
+    label: 'Contractual Exclusion',
     category: 'Scope / Liability',
-    regex: /\b(?:shall\s+not|may\s+not|shall|must|may|should|delete|deleted|omitted|excluded|mandatory|prohibited)\b/gi,
+    regex: /\b(?:shall\s+not|may\s+not|delete|deleted|omitted|excluded|mandatory|prohibited)\b/gi,
   },
 ];
 
@@ -124,6 +128,98 @@ export function detectRiskFlags(text: string): string[] {
       found.add(`${pattern.label}: ${sample}`);
     }
   }
+  return Array.from(found);
+}
+
+/**
+ * Matches lowercase modal directives ("shall", "must", "may", "should", "shall not", "may not")
+ * while ignoring capitalized calendar months such as "May 14, 2026".
+ */
+function extractModalDirectives(text: string): string[] {
+  const re = /\b(shall\s+not|may\s+not|shall|must|may|should)\b/g;
+  const out: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    out.push(match[1].toLowerCase());
+  }
+  return out;
+}
+
+export function extractDirectiveDelta(oldText: string, newText: string): string | null {
+  if (!oldText || !newText) return null;
+  const oldDirectives = extractModalDirectives(oldText);
+  const newDirectives = extractModalDirectives(newText);
+  if (oldDirectives.length === 0 && newDirectives.length === 0) return null;
+
+  if (oldDirectives.length > 0 && newDirectives.length > 0) {
+    const diffIdx = oldDirectives.findIndex(
+      (d, idx) => newDirectives[idx] && d !== newDirectives[idx]
+    );
+    if (diffIdx !== -1) {
+      return `Directive: ${oldDirectives[diffIdx]} → ${newDirectives[diffIdx]}`;
+    }
+    if (oldDirectives[0] !== newDirectives[0]) {
+      return `Directive: ${oldDirectives[0]} → ${newDirectives[0]}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Evaluates risk flags strictly from changed diff spans (never unchanged background sentences)
+ * plus any modal directive shift detected between old and new text.
+ */
+export function detectDeltaRiskFlags(
+  tokens: Array<{ op: -1 | 0 | 1; text: string; riskMatch?: string }>,
+  oldText: string,
+  newText: string
+): string[] {
+  const found = new Set<string>();
+
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.op === 0 || !tok.text.trim()) continue;
+
+    let prevCtx = '';
+    for (let p = i - 1; p >= 0 && prevCtx.length < 32; p--) {
+      if (tokens[p].op === 0 || tokens[p].op === tok.op) {
+        prevCtx = tokens[p].text + prevCtx;
+      }
+    }
+    if (prevCtx.length > 32) prevCtx = prevCtx.slice(-32);
+
+    let nextCtx = '';
+    for (let n = i + 1; n < tokens.length && nextCtx.length < 32; n++) {
+      if (tokens[n].op === 0 || tokens[n].op === tok.op) {
+        nextCtx += tokens[n].text;
+      }
+    }
+    if (nextCtx.length > 32) nextCtx = nextCtx.slice(0, 32);
+
+    const combined = `${prevCtx}${tok.text}${nextCtx}`;
+    const tokStart = prevCtx.length;
+    const tokEnd = tokStart + tok.text.length;
+
+    for (const pattern of RISK_PATTERNS) {
+      const re = new RegExp(pattern.regex.source, 'gi');
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(combined)) !== null) {
+        const mStart = match.index;
+        const mEnd = mStart + match[0].length;
+        if (mStart < tokEnd && mEnd > tokStart) {
+          found.add(`${pattern.label}: ${match[0].trim()}`);
+          break;
+        }
+        if (match[0].length === 0) break;
+      }
+    }
+  }
+
+  const directiveDelta = extractDirectiveDelta(oldText, newText);
+  if (directiveDelta) {
+    found.add(directiveDelta);
+  }
+
   return Array.from(found);
 }
 
@@ -208,18 +304,9 @@ export function extractParagraphDeltaChips(oldText: string, newText: string): st
     chips.push(`Scope: ${oldScope} → ${newScope}`);
   }
 
-  const directiveRe = /\b(shall\s+not|may\s+not|shall|must|may|should)\b/gi;
-  const oldDirectives = (oldText.match(directiveRe) ?? []).map((s) => s.toLowerCase());
-  const newDirectives = (newText.match(directiveRe) ?? []).map((s) => s.toLowerCase());
-  if (oldDirectives.length > 0 && newDirectives.length > 0) {
-    const diffIdx = oldDirectives.findIndex(
-      (d, idx) => newDirectives[idx] && d !== newDirectives[idx]
-    );
-    if (diffIdx !== -1) {
-      chips.push(`Directive: ${oldDirectives[diffIdx]} → ${newDirectives[diffIdx]}`);
-    } else if (oldDirectives[0] !== newDirectives[0]) {
-      chips.push(`Directive: ${oldDirectives[0]} → ${newDirectives[0]}`);
-    }
+  const directiveDelta = extractDirectiveDelta(oldText, newText);
+  if (directiveDelta) {
+    chips.push(directiveDelta);
   }
 
   const thresholdRe =

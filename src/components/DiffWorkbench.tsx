@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
-  ArrowRight,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -23,10 +22,12 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { exportChangeLogToCsv, exportChangeLogToExcel, triggerBlobDownload } from '../utils/exporters';
-import { generateSampleProjectManuals } from '../utils/sampleSpecGenerator';
 import { compareParsedBooks } from '../utils/specDiffEngine';
+import { AiScopeBriefPanel } from './AiScopeBriefPanel';
+import { DiffPrintReport } from './DiffPrintReport';
+import { EmptyWorkbenchGuide } from './EmptyWorkbenchGuide';
 import { HeroRedlineSpecimen } from './HeroRedlineSpecimen';
+import { NoiseDrawer } from './NoiseDrawer';
 import { RedlineTokenRenderer, type DiffViewMode } from './RedlineTokenRenderer';
 import {
   DEFAULT_NOISE_CONFIG,
@@ -103,11 +104,16 @@ function getOverlappingScannedPages(
 }
 
 function getReviewStorageKey(
+  oldContentHash: string | undefined,
+  newContentHash: string | undefined,
   oldFileName: string,
   oldPageCount: number,
   newFileName: string,
   newPageCount: number
 ): string {
+  if (oldContentHash && newContentHash) {
+    return `specdelta:reviewed:v2:${oldContentHash}::${newContentHash}`;
+  }
   return `specdelta:reviewed:${oldFileName}:${oldPageCount}::${newFileName}:${newPageCount}`;
 }
 
@@ -222,6 +228,8 @@ export function DiffWorkbench({
   const activeReviewStorageKey = useMemo(() => {
     if (!diffOutput) return null;
     return getReviewStorageKey(
+      diffOutput.diagnostics.oldContentHash,
+      diffOutput.diagnostics.newContentHash,
       diffOutput.diagnostics.oldFileName,
       diffOutput.diagnostics.oldPageCount,
       diffOutput.diagnostics.newFileName,
@@ -269,6 +277,8 @@ export function DiffWorkbench({
       const timerId = window.setTimeout(() => {
         const output = compareParsedBooks(oldParsed, newParsed);
         const pairKey = getReviewStorageKey(
+          output.diagnostics.oldContentHash,
+          output.diagnostics.newContentHash,
           output.diagnostics.oldFileName,
           output.diagnostics.oldPageCount,
           output.diagnostics.newFileName,
@@ -581,6 +591,7 @@ export function DiffWorkbench({
     setErrorMsg(null);
     setIsGeneratingSample(true);
     try {
+      const { generateSampleProjectManuals } = await import('../utils/sampleSpecGenerator');
       const sample = await generateSampleProjectManuals();
       const oldBuf = sample.oldBytes.buffer.slice(
         sample.oldBytes.byteOffset,
@@ -610,6 +621,10 @@ export function DiffWorkbench({
   }, [externalSampleRequest]);
 
   const handleDownloadSamplePdfs = async () => {
+    const [{ generateSampleProjectManuals }, { triggerBlobDownload }] = await Promise.all([
+      import('../utils/sampleSpecGenerator'),
+      import('../utils/exporters'),
+    ]);
     const sample = await generateSampleProjectManuals();
     triggerBlobDownload(
       new Blob([sample.oldBytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
@@ -1502,122 +1517,7 @@ export function DiffWorkbench({
 
         {/* Main Workbench or Asymmetric Empty-State Ledger */}
         {!diffOutput ? (
-          <section className="max-w-[1380px] mx-auto px-4 sm:px-6 py-10">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-              {/* Left: Numbered Drafting Mechanism Ledger */}
-              <div className="lg:col-span-7 bg-white border border-slate-200 rounded-lg divide-y divide-slate-200">
-                <div className="px-6 py-4 bg-slate-50/60 flex items-center justify-between">
-                  <h2 className="font-display text-sm font-semibold text-slate-900">
-                    How SpecDelta Eliminates Bid-Day False Positives
-                  </h2>
-                  <span className="text-xs font-mono text-slate-500">3-Stage Local Pipeline</span>
-                </div>
-
-                <div className="p-6 flex flex-col sm:flex-row sm:items-start gap-4">
-                  <span className="font-mono text-xs font-semibold text-[#1E40AF] shrink-0 pt-0.5 tabular-nums">
-                    01.
-                  </span>
-                  <div>
-                    <h3 className="font-display text-base font-semibold text-slate-900">
-                      Coordinate Header &amp; Footer Noise Stripping
-                    </h3>
-                    <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                      Reads X/Y text positions inside a dedicated Web Worker, detects lines repeating across more than 40% of pages in the top or bottom 10% margins, and strips stamps like{' '}
-                      <span className="font-mono text-xs text-slate-800">08 71 00 - 4</span> before diffing.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-6 flex flex-col sm:flex-row sm:items-start gap-4">
-                  <span className="font-mono text-xs font-semibold text-[#1E40AF] shrink-0 pt-0.5 tabular-nums">
-                    02.
-                  </span>
-                  <div>
-                    <h3 className="font-display text-base font-semibold text-slate-900">
-                      CSI MasterFormat Alignment &amp; Bookmark Fallback
-                    </h3>
-                    <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                      Normalizes inconsistent section codes (<span className="font-mono text-xs text-slate-800">08 71 00</span> vs. <span className="font-mono text-xs text-slate-800">08 7100</span> vs. <span className="font-mono text-xs text-slate-800">08710</span>), falls back to PDF outline bookmarks on schedule pages, and heals hyphenated line wraps.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-6 flex flex-col sm:flex-row sm:items-start gap-4">
-                  <span className="font-mono text-xs font-semibold text-[#1E40AF] shrink-0 pt-0.5 tabular-nums">
-                    03.
-                  </span>
-                  <div>
-                    <h3 className="font-display text-base font-semibold text-slate-900">
-                      Deterministic Money &amp; Risk Highlighter
-                    </h3>
-                    <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                      Surfaces numeric tolerances (<span className="font-mono text-xs text-slate-800">PSI</span>, <span className="font-mono text-xs text-slate-800">mil</span>, <span className="font-mono text-xs text-slate-800">gauge</span>), warranty shifts, allowances, and liability transfers (<span className="font-mono text-xs text-slate-800">furnish and install</span> vs. <span className="font-mono text-xs text-slate-800">install only</span>) with 1-click Excel export.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Dedicated CSI Spec Book Splitter + Proof Benchmarks */}
-              <div className="lg:col-span-5 bg-white border border-slate-200 rounded-lg p-6 flex flex-col justify-between gap-6">
-                <div className="space-y-4">
-                  <div className="text-xs font-mono text-slate-500">Companion Utility · Division Slicer</div>
-                  <h2 className="font-display text-xl font-bold text-slate-900 leading-snug text-balance">
-                    Only bidding one trade? Extract your CSI Division before comparing.
-                  </h2>
-                  <p className="text-sm text-slate-600 leading-relaxed">
-                    Use the free CSI MasterFormat Spec Book Splitter to slice Division 03, 08, 23, or 26 out of an 800-page GC Project Manual into a standalone PDF—without uploading a single byte.
-                  </p>
-
-                  <div className="pt-4 border-t border-slate-200 grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="font-mono text-lg font-bold text-slate-900 tabular-nums">
-                        ±10% / &gt;40%
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Configurable margin &amp; header strip
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-mono text-lg font-bold text-[#1E40AF] tabular-nums">
-                        Local Worker
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Off-thread Web Worker PDF parsing
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <a
-                    href="/split-spec-book"
-                    onClick={(e) => {
-                      if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
-                        e.preventDefault();
-                        onNavigate('/split-spec-book');
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] drafting-transition whitespace-nowrap shrink-0"
-                  >
-                    Open Spec Book Splitter
-                    <ArrowRight className="w-4 h-4" />
-                  </a>
-                  <a
-                    href="/benchmark"
-                    onClick={(e) => {
-                      if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
-                        e.preventDefault();
-                        onNavigate('/benchmark');
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 drafting-transition whitespace-nowrap shrink-0"
-                  >
-                    View Sample Benchmark
-                  </a>
-                </div>
-              </div>
-            </div>
-          </section>
+          <EmptyWorkbenchGuide onNavigate={onNavigate} />
         ) : diffOutput.diagnostics.oldMostlyScanned || diffOutput.diagnostics.newMostlyScanned ? (
           <section
             ref={resultsRef}
@@ -1787,25 +1687,30 @@ export function DiffWorkbench({
                   className="text-[#1E40AF] font-medium hover:underline cursor-pointer inline-flex items-center gap-1"
                 >
                   <Eye className="w-3.5 h-3.5" />
-                  Stripped Headers/Footers (
+                  Stripped Noise:{' '}
                   <span>
+                    {(diffOutput.diagnostics.oldStrippedLineCount ?? 0) +
+                      (diffOutput.diagnostics.newStrippedLineCount ?? 0)}{' '}
+                    lines (
                     {diffOutput.diagnostics.oldStrippedPatterns.length +
-                      diffOutput.diagnostics.newStrippedPatterns.length}
+                      diffOutput.diagnostics.newStrippedPatterns.length}{' '}
+                    patterns)
                   </span>
-                  )
                 </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() =>
-                    exportChangeLogToExcel(
-                      allChangedSections,
-                      'SpecDelta_All_Changes',
-                      reviewedCodes
-                    )
-                  }
+                  onClick={() => {
+                    void import('../utils/exporters').then(({ exportChangeLogToExcel }) =>
+                      exportChangeLogToExcel(
+                        allChangedSections,
+                        'SpecDelta_All_Changes',
+                        reviewedCodes
+                      )
+                    );
+                  }}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#1E40AF] rounded-md hover:bg-[#1E3A8A] transition-colors cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -1814,13 +1719,15 @@ export function DiffWorkbench({
                 {filteredChangedSections.length < allChangedSections.length && (
                   <button
                     type="button"
-                    onClick={() =>
-                      exportChangeLogToExcel(
-                        filteredChangedSections,
-                        'SpecDelta_Filtered_View',
-                        reviewedCodes
-                      )
-                    }
+                    onClick={() => {
+                      void import('../utils/exporters').then(({ exportChangeLogToExcel }) =>
+                        exportChangeLogToExcel(
+                          filteredChangedSections,
+                          'SpecDelta_Filtered_View',
+                          reviewedCodes
+                        )
+                      );
+                    }}
                     className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-[#1E40AF] bg-white border border-[#1E40AF]/30 rounded-md hover:bg-blue-50 transition-colors cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                   >
                     Export Current View ({filteredChangedSections.length})
@@ -1828,13 +1735,15 @@ export function DiffWorkbench({
                 )}
                 <button
                   type="button"
-                  onClick={() =>
-                    exportChangeLogToCsv(
-                      allChangedSections,
-                      'SpecDelta_All_Changes',
-                      reviewedCodes
-                    )
-                  }
+                  onClick={() => {
+                    void import('../utils/exporters').then(({ exportChangeLogToCsv }) =>
+                      exportChangeLogToCsv(
+                        allChangedSections,
+                        'SpecDelta_All_Changes',
+                        reviewedCodes
+                      )
+                    );
+                  }}
                   className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -1904,194 +1813,27 @@ export function DiffWorkbench({
 
             {/* Stripped Noise Inspector & Threshold Tuning Drawer */}
             {showNoiseDrawer && (
-              <div className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="font-display text-sm font-semibold text-slate-900">
-                      Auto-Stripped Repeating Headers & Footers
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-                      Active policy: top/bottom {Math.round(noiseConfig.edgeMarginPct * 100)}% margins recurring on &gt;
-                      {Math.round(noiseConfig.minRecurrencePct * 100)}% of pages
-                      {(diffOutput.diagnostics.outlineHintsUsed ?? 0) > 0
-                        ? ` · ${diffOutput.diagnostics.outlineHintsUsed} PDF outline TOC fallback hints applied`
-                        : ''}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowNoiseDrawer(false)}
-                    className="text-slate-500 hover:text-slate-900 cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Configurable Sensitivity Controls */}
-                <div className="flex flex-wrap items-center gap-4 pt-1 pb-2 border-b border-slate-100 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-600 font-medium">Margin Zone:</span>
-                    <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-md">
-                      {[0.05, 0.1, 0.15].map((val) => (
-                        <button
-                          key={val}
-                          type="button"
-                          disabled={isProcessing}
-                          onClick={() =>
-                            handleReparseWithNoiseConfig({
-                              ...noiseConfig,
-                              edgeMarginPct: val,
-                            })
-                          }
-                          className={`px-2.5 py-1 rounded text-[11px] font-medium tabular-nums cursor-pointer transition-colors ${
-                            Math.abs(noiseConfig.edgeMarginPct - val) < 0.001
-                              ? 'bg-white text-[#1E40AF] shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          {Math.round(val * 100)}%
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-600 font-medium">Page Recurrence:</span>
-                    <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-md">
-                      {[0.3, 0.4, 0.6].map((val) => (
-                        <button
-                          key={val}
-                          type="button"
-                          disabled={isProcessing}
-                          onClick={() =>
-                            handleReparseWithNoiseConfig({
-                              ...noiseConfig,
-                              minRecurrencePct: val,
-                            })
-                          }
-                          className={`px-2.5 py-1 rounded text-[11px] font-medium tabular-nums cursor-pointer transition-colors ${
-                            Math.abs(noiseConfig.minRecurrencePct - val) < 0.001
-                              ? 'bg-white text-[#1E40AF] shadow-xs'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          &gt;{Math.round(val * 100)}%
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[
-                    {
-                      label: `Baseline (${diffOutput.diagnostics.oldFileName})`,
-                      items: diffOutput.diagnostics.oldStrippedPatterns,
-                    },
-                    {
-                      label: `Addendum (${diffOutput.diagnostics.newFileName})`,
-                      items: diffOutput.diagnostics.newStrippedPatterns,
-                    },
-                  ].map((col) => (
-                    <div key={col.label} className="border border-slate-200 rounded-md overflow-hidden">
-                      <div className="bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 border-b border-slate-200">
-                        {col.label}
-                      </div>
-                      {col.items.length === 0 ? (
-                        <div className="p-3 text-xs text-slate-500">No repeating edge noise detected.</div>
-                      ) : (
-                        <ul className="divide-y divide-slate-100">
-                          {col.items.map((item, i) => (
-                            <li key={i} className="px-3 py-2 text-xs flex items-center justify-between gap-3">
-                              <span className="font-mono text-slate-800 truncate">{item.sample}</span>
-                              <span className="text-slate-500 shrink-0 tabular-nums">
-                                {item.zone} · {item.frequencyPct}% ({item.pageHits}/{item.totalPages} pp)
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <NoiseDrawer
+                diagnostics={diffOutput.diagnostics}
+                noiseConfig={noiseConfig}
+                isProcessing={isProcessing}
+                onReparse={handleReparseWithNoiseConfig}
+                onClose={() => setShowNoiseDrawer(false)}
+              />
             )}
 
             {/* Opt-In Google Gemini Cost & Scope Impact Brief */}
             {aiBriefEnabled && (
-              <div className="bg-white border border-amber-300 rounded-lg p-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h3 className="font-display text-base font-semibold text-slate-900">
-                      Opt-In Google Gemini Cost &amp; Scope Brief
-                    </h3>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Sends the top{' '}
-                      <span className="font-mono font-semibold tabular-nums">
-                        {changedPayloadEstimate.cappedSectionsCount}
-                      </span>{' '}
-                      risk-ranked sections of{' '}
-                      <span className="font-mono font-semibold tabular-nums">
-                        {changedPayloadEstimate.sectionsCount}
-                      </span>{' '}
-                      changed (~
-                      <span className="font-mono tabular-nums">
-                        {changedPayloadEstimate.cappedCharCount.toLocaleString()}
-                      </span>{' '}
-                      chars; max 8 paragraphs &amp; 700 chars each) to{' '}
-                      <strong className="font-semibold text-slate-900">Google Gemini</strong>{' '}
-                      via <span className="font-mono">/api/scope-brief</span> — never your full Project Manual PDFs.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={aiBriefLoading || changedPayloadEstimate.sectionsCount === 0}
-                    onClick={() => void handleGenerateAiBrief()}
-                    className="px-4 py-2 text-xs font-semibold text-white bg-[#B45309] rounded-md hover:bg-[#92400E] disabled:opacity-50 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    {aiBriefLoading ? 'Sending to Google Gemini...' : 'Generate 5-Bullet Gemini Brief'}
-                  </button>
-                </div>
-
-                {aiBriefNotice && (
-                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs text-amber-950">
-                    {aiBriefNotice}
-                  </div>
-                )}
-
-                {aiBriefError && (
-                  <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-3 text-xs text-red-900">
-                    {aiBriefError}
-                  </div>
-                )}
-
-                {aiBrief && (
-                  <div className="mt-4 pt-4 border-t border-slate-200 space-y-4">
-                    <div className="text-[11px] font-mono text-amber-900 bg-amber-50/70 border border-amber-200 rounded px-3 py-1.5 tabular-nums">
-                      Brief covers {aiBrief.sectionsSentCount ?? changedPayloadEstimate.cappedSectionsCount} of{' '}
-                      {aiBrief.totalChangedSections ?? changedPayloadEstimate.sectionsCount} changed sections (risk-ranked) · Generated by Google Gemini
-                    </div>
-                    <p className="text-sm font-medium text-slate-900 leading-relaxed">
-                      {aiBrief.executiveSummary}
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {aiBrief.bullets.map((b, idx) => (
-                        <div key={idx} className="border border-slate-200 rounded-md p-3.5 bg-slate-50/70">
-                          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-                            <span className="font-mono font-semibold text-[#1E40AF] tabular-nums">
-                              {b.sectionCode}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-medium text-amber-800">{b.impactCategory}</span>
-                          </div>
-                          <div className="text-sm font-semibold text-slate-900">{b.headline}</div>
-                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{b.detail}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <AiScopeBriefPanel
+                sectionsCount={changedPayloadEstimate.sectionsCount}
+                cappedSectionsCount={changedPayloadEstimate.cappedSectionsCount}
+                cappedCharCount={changedPayloadEstimate.cappedCharCount}
+                loading={aiBriefLoading}
+                notice={aiBriefNotice}
+                error={aiBriefError}
+                brief={aiBrief}
+                onGenerate={() => void handleGenerateAiBrief()}
+              />
             )}
 
             {/* Bid-Day Risk Triage Quick-Jump Strip */}
@@ -2626,57 +2368,11 @@ export function DiffWorkbench({
 
       {/* Print-Only Clean Redline Report (HTML-to-PDF) */}
       {diffOutput && !diffOutput.diagnostics.oldMostlyScanned && !diffOutput.diagnostics.newMostlyScanned && (
-        <div className="hidden print-only p-6 space-y-6">
-          <div className="border-b-2 border-slate-900 pb-4">
-            <h1 className="font-display text-2xl font-bold text-slate-900">
-              SpecDelta Clean Redline Report
-            </h1>
-            <div className="mt-1 text-xs text-slate-600 font-mono">
-              Baseline: {diffOutput.diagnostics.oldFileName} ({diffOutput.diagnostics.oldPageCount} pp.) · Revised:{' '}
-              {diffOutput.diagnostics.newFileName} ({diffOutput.diagnostics.newPageCount} pp.) · {allChangedSections.length} Changed Sections
-            </div>
-          </div>
-
-          {allChangedSections.map((sec) => (
-            <div key={sec.sectionCode} className="print-break-inside-avoid border border-slate-300 rounded p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <div className="font-display font-bold text-base text-slate-900">
-                  <span className="font-mono mr-2">{sec.sectionCode}</span>
-                  {sec.title}
-                </div>
-                <div className="text-xs font-mono uppercase font-semibold">
-                  {sec.status} · {reviewedCodes.has(sec.sectionCode) ? 'REVIEWED' : 'PENDING'} · pp. {sec.oldPageRange} → {sec.newPageRange}
-                </div>
-              </div>
-
-              {sec.riskFlags.length > 0 && (
-                <div className="text-xs font-mono text-amber-900 bg-amber-50 px-2.5 py-1.5 rounded">
-                  Risk Flags: {sec.riskFlags.join(' · ')}
-                </div>
-              )}
-
-              {sec.changedParagraphs.map((para, pIdx) => (
-                <div key={pIdx} className="text-xs leading-relaxed border-t border-slate-100 pt-2">
-                  {para.tokens.map((tok, tIdx) => {
-                    if (tok.op === 0) return <span key={tIdx}>{tok.text}</span>;
-                    if (tok.op === -1) {
-                      return (
-                        <del key={tIdx} className="text-red-700 bg-red-50 line-through">
-                          {tok.text}
-                        </del>
-                      );
-                    }
-                    return (
-                      <ins key={tIdx} className="text-emerald-800 bg-emerald-50 underline font-semibold">
-                        {tok.text}
-                      </ins>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
+        <DiffPrintReport
+          diagnostics={diffOutput.diagnostics}
+          allChangedSections={allChangedSections}
+          reviewedCodes={reviewedCodes}
+        />
       )}
     </div>
   );

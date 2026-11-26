@@ -258,14 +258,14 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     eyebrow: 'Benchmark Study · Synthetic Sample Fixture',
     headline: 'Bluebeam Revu vs. Cloud LLMs vs. SpecDelta on a Multi-Division Addendum',
     summary:
-      'Methodology note: this benchmark evaluates SpecDelta’s deterministic engine on our reproducible 26-page synthetic Project Manual fixture (Issued_For_Bid_Sample.pdf vs. Addendum_01_Sample.pdf) containing repeating headers, page shifts, inconsistent CSI spacing, a deleted section, and tolerance upgrades.',
+      'Methodology note: this benchmark evaluates SpecDelta’s deterministic engine on our reproducible 16-page synthetic Project Manual fixture (7-page Issued_For_Bid_Sample.pdf vs. 9-page Addendum_01_Sample.pdf) containing repeating headers, page shifts, inconsistent CSI spacing, a deleted section, and tolerance upgrades.',
     heroImage: 'desk',
     heroImageAlt: 'Specification benchmark desk setup with Project Manual and structural sheets',
     keyGotchas: [
       {
         title: '01. Why Visual Overlay Struggles on Shifts',
         detail:
-          'Inserting 2 paragraphs in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual page-by-page comparison flags Section 23 as changed even though its specification text did not change.',
+          'Inserting clauses in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual page-by-page comparison flags Section 23 as changed even though its specification text did not change.',
       },
       {
         title: '02. Why Full-Book LLM Uploads Struggle',
@@ -280,7 +280,7 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     ],
     howToSteps: [
       {
-        step: 'Download or Load the 26-Page Benchmark Sample Set',
+        step: 'Download or Load the 16-Page Benchmark Sample Set',
         description:
           'Click "Load Sample Spec" in the SpecDelta Diff Checker to generate the exact Issued-For-Bid and Addendum 01 synthetic fixture PDFs locally in your browser.',
       },
@@ -640,7 +640,7 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
       {
         title: '02. Browser Review Persistence (localStorage)',
         detail:
-          'Section "Reviewed" checkboxes are saved only in your browser localStorage keyed by filename and page-count fingerprint so multi-hour bid reviews survive refreshes. Clear browser site data anytime to reset.',
+          'Section "Reviewed" checkboxes are saved only in your browser localStorage keyed by a content hash of the parsed CSI sections so multi-hour bid reviews survive refreshes without cross-project collisions. Clear browser site data anytime to reset.',
       },
       {
         title: '03. Explicit Opt-In Google Gemini Scope Brief',
