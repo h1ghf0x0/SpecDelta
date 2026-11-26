@@ -165,6 +165,7 @@ async function extractLinesWithCoordinates(
   pageCount: number;
   lines: RawPageLine[];
   totalChars: number;
+  scannedPages: number[];
   outlineHintsByPage: Map<number, OutlineSectionHint[]>;
 }> {
   const loadingTask = pdfjsLib.getDocument({
@@ -175,6 +176,7 @@ async function extractLinesWithCoordinates(
   try {
     const pageCount = pdf.numPages;
     const allLines: RawPageLine[] = [];
+    const scannedPages: number[] = [];
     let totalChars = 0;
 
     // Extract PDF outline/bookmark TOC hints for section fallback & title enrichment
@@ -232,6 +234,7 @@ async function extractLinesWithCoordinates(
         }
       }
 
+      let pageChars = 0;
       for (const group of lineGroups) {
         group.items.sort((a, b) => a.x - b.x);
         let lineText = '';
@@ -252,6 +255,7 @@ async function extractLinesWithCoordinates(
         if (!lineText) continue;
 
         totalChars += lineText.length;
+        pageChars += lineText.length;
         const yPct = Math.max(0, Math.min(1, 1 - group.y / pageHeight));
         allLines.push({
           page: p,
@@ -260,10 +264,14 @@ async function extractLinesWithCoordinates(
         });
       }
 
+      if (pageChars < 30) {
+        scannedPages.push(p);
+      }
+
       page.cleanup();
     }
 
-    return { pageCount, lines: allLines, totalChars, outlineHintsByPage };
+    return { pageCount, lines: allLines, totalChars, scannedPages, outlineHintsByPage };
   } finally {
     await loadingTask.destroy();
   }
@@ -551,7 +559,7 @@ self.onmessage = async (event: MessageEvent<ParsePdfRequest>) => {
   try {
     postProgress(requestId, 'loading', 3, `Opening ${fileName}...`);
 
-    const { pageCount, lines, totalChars, outlineHintsByPage } =
+    const { pageCount, lines, totalChars, scannedPages, outlineHintsByPage } =
       await extractLinesWithCoordinates(buffer, fileName, requestId);
 
     postProgress(
@@ -572,7 +580,10 @@ self.onmessage = async (event: MessageEvent<ParsePdfRequest>) => {
       pageCount,
       outlineHintsByPage
     );
-    const scannedWarning = pageCount > 0 && totalChars / pageCount < 40;
+    const isMostlyScanned =
+      pageCount > 0 &&
+      (totalChars / pageCount < 40 || scannedPages.length / pageCount >= 0.5);
+    const scannedWarning = isMostlyScanned || scannedPages.length > 0;
 
     postProgress(requestId, 'complete', 100, 'Parsed cleanly.');
 
@@ -583,6 +594,8 @@ self.onmessage = async (event: MessageEvent<ParsePdfRequest>) => {
       strippedPatterns,
       parseTimeMs: Math.round(performance.now() - startTime),
       scannedWarning,
+      scannedPages,
+      isMostlyScanned,
       outlineHintsUsed,
       appliedNoiseConfig: noiseConfig,
     };

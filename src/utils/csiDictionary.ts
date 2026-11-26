@@ -63,9 +63,9 @@ export interface RiskPattern {
 
 export const RISK_PATTERNS: RiskPattern[] = [
   {
-    label: 'PSI / Strength',
+    label: 'PSI / Strength / AIC',
     category: 'Tolerance / Unit',
-    regex: /\b\d[\d,]*(?:\.\d+)?\s*(?:psi|ksi|mpa)\b/gi,
+    regex: /\b\d[\d,]*(?:\.\d+)?\s*(?:psi|ksi|mpa|k?aic)\b/gi,
   },
   {
     label: 'Thickness / Gauge / Mil',
@@ -130,4 +130,75 @@ export function findRiskMatchInToken(tokenText: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Evaluates risk patterns across a sliding window around a changed token so multi-word
+ * phrases like "3,000" + " psi" or "furnish" + " and install" still highlight the changed token.
+ */
+export function extractContextRiskMatch(
+  prevContext: string,
+  tokenText: string,
+  nextContext: string
+): string | undefined {
+  if (!tokenText.trim()) return undefined;
+  const direct = findRiskMatchInToken(tokenText);
+  if (direct) return direct;
+
+  const combined = `${prevContext}${tokenText}${nextContext}`;
+  const tokenStart = prevContext.length;
+  const tokenEnd = tokenStart + tokenText.length;
+
+  for (const pattern of RISK_PATTERNS) {
+    const re = new RegExp(pattern.regex.source, 'gi');
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(combined)) !== null) {
+      const mStart = match.index;
+      const mEnd = mStart + match[0].length;
+      if (mStart < tokenEnd && mEnd > tokenStart) {
+        return pattern.category;
+      }
+      if (match[0].length === 0) break;
+    }
+  }
+  return undefined;
+}
+
+const DELTA_UNIT_GROUPS: Array<{ label: string; regex: RegExp }> = [
+  { label: 'Strength', regex: /\b\d[\d,]*(?:\.\d+)?\s*(?:psi|ksi|mpa)\b/gi },
+  { label: 'Gauge / Mil', regex: /\b\d+(?:\.\d+)?\s*(?:mil|mils|mm|ga|gauge)\b/gi },
+  { label: 'Rating / Term', regex: /\b\d+(?:\.\d+)?[-\s]?(?:hr|hour|hours|year|years|yr|yrs)\b/gi },
+  { label: 'Cost', regex: /(?:\$\s?\d[\d,]*(?:\.\d{1,2})?|\b\d+(?:\.\d+)?%)/gi },
+  { label: 'AIC', regex: /\b\d[\d,]*\s*(?:k?aic)\b/gi },
+];
+
+export function extractParagraphDeltaChips(oldText: string, newText: string): string[] {
+  const chips: string[] = [];
+  if (!oldText || !newText) return chips;
+
+  for (const group of DELTA_UNIT_GROUPS) {
+    const oldMatches = (oldText.match(new RegExp(group.regex.source, 'gi')) ?? []).map((s) =>
+      s.replace(/\s+/g, ' ').trim()
+    );
+    const newMatches = (newText.match(new RegExp(group.regex.source, 'gi')) ?? []).map((s) =>
+      s.replace(/\s+/g, ' ').trim()
+    );
+    if (oldMatches.length > 0 && newMatches.length > 0) {
+      const firstDiffIdx = oldMatches.findIndex((m, idx) => newMatches[idx] && m.toLowerCase() !== newMatches[idx].toLowerCase());
+      if (firstDiffIdx !== -1) {
+        chips.push(`${group.label}: ${oldMatches[firstDiffIdx]} → ${newMatches[firstDiffIdx]}`);
+      } else if (oldMatches[0].toLowerCase() !== newMatches[0].toLowerCase()) {
+        chips.push(`${group.label}: ${oldMatches[0]} → ${newMatches[0]}`);
+      }
+    }
+  }
+
+  const scopeRe = /\b(furnish\s+and\s+install|furnish\s+only|install\s+only|by\s+owner|owner[- ]furnished|contractor[- ]installed)\b/i;
+  const oldScope = oldText.match(scopeRe)?.[1];
+  const newScope = newText.match(scopeRe)?.[1];
+  if (oldScope && newScope && oldScope.toLowerCase() !== newScope.toLowerCase()) {
+    chips.push(`Scope: ${oldScope} → ${newScope}`);
+  }
+
+  return chips.slice(0, 3);
 }

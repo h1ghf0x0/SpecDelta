@@ -39,10 +39,10 @@ export function RedlineTokenRenderer({
             <ins
               key={idx}
               title={tok.riskMatch ? `Risk (${tok.riskMatch})` : 'Added text'}
-              className={`no-underline px-0.5 rounded-xs font-medium ${
+              className={`underline decoration-2 underline-offset-2 px-0.5 rounded-xs font-medium ${
                 tok.riskMatch
-                  ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-400'
-                  : 'bg-emerald-50 text-[#15803D]'
+                  ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-400 decoration-amber-700/80'
+                  : 'bg-emerald-50 text-[#15803D] decoration-emerald-600/75'
               }`}
             >
               {tok.text}
@@ -98,10 +98,10 @@ export function RedlineTokenRenderer({
               <ins
                 key={idx}
                 title={tok.riskMatch ? `Risk (${tok.riskMatch})` : 'Added in addendum'}
-                className={`no-underline px-0.5 rounded-xs font-medium ${
+                className={`underline decoration-2 underline-offset-2 px-0.5 rounded-xs font-medium ${
                   tok.riskMatch
-                    ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-400'
-                    : 'bg-emerald-50 text-[#15803D]'
+                    ? 'bg-amber-100 text-amber-950 ring-1 ring-amber-400 decoration-amber-700/80'
+                    : 'bg-emerald-50 text-[#15803D] decoration-emerald-600/75'
                 }`}
               >
                 {tok.text}

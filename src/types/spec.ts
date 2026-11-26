@@ -50,6 +50,7 @@ export interface ChangedParagraph {
   contextAfter: string;
   tokens: WordDiffToken[];
   riskFlags: string[];
+  deltaChips?: string[];
 }
 
 export interface DiffSectionResult {
@@ -63,6 +64,7 @@ export interface DiffSectionResult {
   oldPageRange: string;
   newPageRange: string;
   changedParagraphs: ChangedParagraph[];
+  fullTokens?: WordDiffToken[];
   fullOldText: string;
   fullNewText: string;
   riskFlags: string[];
@@ -93,6 +95,10 @@ export interface ParseDiagnostics {
   newStrippedPatterns: StrippedPattern[];
   parseTimeMs: number;
   scannedWarning: boolean;
+  oldScannedPages?: number[];
+  newScannedPages?: number[];
+  oldMostlyScanned?: boolean;
+  newMostlyScanned?: boolean;
   outlineHintsUsed?: number;
   appliedNoiseConfig?: NoiseFilterConfig;
   renumberedCount?: number;
@@ -110,6 +116,8 @@ export interface SingleSpecParseOutput {
   strippedPatterns: StrippedPattern[];
   parseTimeMs: number;
   scannedWarning: boolean;
+  scannedPages?: number[];
+  isMostlyScanned?: boolean;
   outlineHintsUsed?: number;
   appliedNoiseConfig?: NoiseFilterConfig;
 }
@@ -130,4 +138,6 @@ export interface ScopeBriefBullet {
 export interface ScopeBriefResponse {
   executiveSummary: string;
   bullets: ScopeBriefBullet[];
+  sectionsSentCount?: number;
+  totalChangedSections?: number;
 }

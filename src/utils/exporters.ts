@@ -7,6 +7,7 @@ interface ExportRow {
   'Section #': string;
   'Section Title': string;
   Status: string;
+  Reviewed: string;
   'Old Pages': string;
   'New Pages': string;
   'Old Text': string;
@@ -14,11 +15,21 @@ interface ExportRow {
   'Risk Keyword Flag': string;
 }
 
-function buildRows(results: DiffSectionResult[]): ExportRow[] {
+function safeCellText(text: string): string {
+  const limit = 31950;
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}... [truncated to 32k Excel cell limit]`;
+}
+
+function buildRows(
+  results: DiffSectionResult[],
+  reviewedCodes?: Set<string>
+): ExportRow[] {
   const rows: ExportRow[] = [];
 
   for (const sec of results) {
     if (sec.status === 'unchanged' && !sec.renumberedFrom) continue;
+    const reviewedLabel = reviewedCodes?.has(sec.sectionCode) ? 'Reviewed' : 'Pending';
 
     if (sec.status === 'added') {
       rows.push({
@@ -26,10 +37,11 @@ function buildRows(results: DiffSectionResult[]): ExportRow[] {
         'Section #': sec.sectionCode,
         'Section Title': sec.title,
         Status: 'Added',
+        Reviewed: reviewedLabel,
         'Old Pages': '—',
         'New Pages': sec.newPageRange,
         'Old Text': '',
-        'New Text': sec.fullNewText.slice(0, 32000),
+        'New Text': safeCellText(sec.fullNewText),
         'Risk Keyword Flag': sec.riskFlags.join('; ') || 'None',
       });
       continue;
@@ -41,9 +53,10 @@ function buildRows(results: DiffSectionResult[]): ExportRow[] {
         'Section #': sec.sectionCode,
         'Section Title': sec.title,
         Status: 'Deleted',
+        Reviewed: reviewedLabel,
         'Old Pages': sec.oldPageRange,
         'New Pages': '—',
-        'Old Text': sec.fullOldText.slice(0, 32000),
+        'Old Text': safeCellText(sec.fullOldText),
         'New Text': '',
         'Risk Keyword Flag': sec.riskFlags.join('; ') || 'None',
       });
@@ -65,10 +78,11 @@ function buildRows(results: DiffSectionResult[]): ExportRow[] {
         'Section #': sectionLabel,
         'Section Title': sec.title,
         Status: statusLabel,
+        Reviewed: reviewedLabel,
         'Old Pages': sec.oldPageRange,
         'New Pages': sec.newPageRange,
-        'Old Text': sec.fullOldText.slice(0, 32000),
-        'New Text': sec.fullNewText.slice(0, 32000),
+        'Old Text': safeCellText(sec.fullOldText),
+        'New Text': safeCellText(sec.fullNewText),
         'Risk Keyword Flag': sec.riskFlags.join('; ') || 'None',
       });
     } else {
@@ -78,10 +92,11 @@ function buildRows(results: DiffSectionResult[]): ExportRow[] {
           'Section #': sectionLabel,
           'Section Title': sec.title,
           Status: statusLabel,
+          Reviewed: reviewedLabel,
           'Old Pages': sec.oldPageRange,
           'New Pages': sec.newPageRange,
-          'Old Text': para.oldText.slice(0, 32000),
-          'New Text': para.newText.slice(0, 32000),
+          'Old Text': safeCellText(para.oldText),
+          'New Text': safeCellText(para.newText),
           'Risk Keyword Flag': para.riskFlags.join('; ') || 'None',
         });
       }
@@ -91,14 +106,19 @@ function buildRows(results: DiffSectionResult[]): ExportRow[] {
   return rows;
 }
 
-export function exportChangeLogToExcel(results: DiffSectionResult[], fileBaseName = 'SpecDelta_Change_Log'): void {
-  const rows = buildRows(results);
+export function exportChangeLogToExcel(
+  results: DiffSectionResult[],
+  fileBaseName = 'SpecDelta_Change_Log',
+  reviewedCodes?: Set<string>
+): void {
+  const rows = buildRows(results, reviewedCodes);
   const worksheet = XLSX.utils.json_to_sheet(rows);
   worksheet['!cols'] = [
     { wch: 28 },
-    { wch: 14 },
+    { wch: 16 },
     { wch: 30 },
-    { wch: 12 },
+    { wch: 16 },
+    { wch: 11 },
     { wch: 12 },
     { wch: 12 },
     { wch: 52 },
@@ -111,11 +131,16 @@ export function exportChangeLogToExcel(results: DiffSectionResult[], fileBaseNam
   XLSX.writeFile(workbook, `${fileBaseName}.xlsx`);
 }
 
-export function exportChangeLogToCsv(results: DiffSectionResult[], fileBaseName = 'SpecDelta_Change_Log'): void {
-  const rows = buildRows(results);
+export function exportChangeLogToCsv(
+  results: DiffSectionResult[],
+  fileBaseName = 'SpecDelta_Change_Log',
+  reviewedCodes?: Set<string>
+): void {
+  const rows = buildRows(results, reviewedCodes);
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const csv = XLSX.utils.sheet_to_csv(worksheet);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  // Prepend UTF-8 BOM so Microsoft Excel preserves em-dashes and smart quotes
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
   triggerBlobDownload(blob, `${fileBaseName}.csv`);
 }
 

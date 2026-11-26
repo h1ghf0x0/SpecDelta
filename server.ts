@@ -44,8 +44,18 @@ app.post('/api/scope-brief', async (req, res) => {
       return;
     }
 
+    // Prioritize highest-risk and largest-delta sections before capping payload to 25
+    const ranked = [...sections].sort((a, b) => {
+      const aRisks = a.changedParagraphs.reduce((sum, p) => sum + p.riskFlags.length, 0);
+      const bRisks = b.changedParagraphs.reduce((sum, p) => sum + p.riskFlags.length, 0);
+      if (aRisks !== bRisks) return bRisks - aRisks;
+      return b.changedParagraphs.length - a.changedParagraphs.length;
+    });
+
+    const selected = ranked.slice(0, 25);
+
     // Only transmit compact changed paragraphs (never full spec manuals)
-    const condensed = sections.slice(0, 25).map((s) => ({
+    const condensed = selected.map((s) => ({
       sectionCode: s.sectionCode,
       division: s.division,
       title: s.title,
@@ -67,7 +77,7 @@ app.post('/api/scope-brief', async (req, res) => {
     });
 
     const prompt = `You are a senior commercial construction chief estimator reviewing isolated specification changes between an original Project Manual and an Addendum.
-Analyze ONLY the following changed specification excerpts and produce an executive 5-bullet (or fewer if fewer than 5 distinct changes exist) Cost & Scope Impact Brief for bid day.
+Analyze ONLY the following changed specification excerpts (the top ${condensed.length} risk-ranked sections out of ${sections.length} changed sections) and produce an executive 5-bullet (or fewer if fewer than 5 distinct changes exist) Cost & Scope Impact Brief for bid day.
 Focus strictly on hard cost drivers, material/tolerance upgrades (PSI, mil, gauge), scope transfers (furnish vs. install, by Owner), allowances, warranties, and lead-time risks.
 Do not invent sections or values that are not present in the provided JSON.
 
@@ -122,7 +132,11 @@ ${JSON.stringify(condensed, null, 2)}`;
 
     const raw = (response.text ?? '{}').trim();
     const parsed = JSON.parse(raw);
-    res.json(parsed);
+    res.json({
+      ...parsed,
+      sectionsSentCount: condensed.length,
+      totalChangedSections: sections.length,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to generate Scope Impact Brief.';
     const status = message.includes('403') || message.includes('PERMISSION_DENIED') ? 403 : 500;

@@ -1,20 +1,21 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, Columns2, List } from 'lucide-react';
-import type { WordDiffToken } from '../types/spec';
+import { detectRiskFlags, extractParagraphDeltaChips } from '../utils/csiDictionary';
+import { computeWordDiff } from '../utils/specDiffEngine';
 import { RedlineTokenRenderer, type DiffViewMode } from './RedlineTokenRenderer';
 
-interface SpecimenCase {
+interface SpecimenDefinition {
   id: string;
   tabLabel: string;
   sectionCode: string;
   title: string;
   pageShift: string;
   strippedHeaderSample: string;
-  riskFlags: string[];
-  tokens: WordDiffToken[];
+  oldClause: string;
+  newClause: string;
 }
 
-const SPECIMEN_CASES: SpecimenCase[] = [
+const SPECIMEN_DEFINITIONS: SpecimenDefinition[] = [
   {
     id: 'concrete',
     tabLabel: '03 30 00 Concrete',
@@ -22,16 +23,10 @@ const SPECIMEN_CASES: SpecimenCase[] = [
     title: 'Cast-in-Place Concrete',
     pageShift: 'pp. 114–128 → pp. 119–133',
     strippedHeaderSample: '03 30 00 - # · Issued for Bid',
-    riskFlags: ['3,000 PSI → 4,500 PSI', 'Tolerance / Mix Upgrade'],
-    tokens: [
-      { op: 0, text: '2.4 MIX DESIGN: Elevated structural slab concrete shall achieve a minimum compressive strength of ' },
-      { op: -1, text: '3,000 psi', riskMatch: '3,000 psi' },
-      { op: 1, text: '4,500 psi', riskMatch: '4,500 psi' },
-      { op: 0, text: ' at 28 days with maximum water-cementitious ratio of ' },
-      { op: -1, text: '0.50' },
-      { op: 1, text: '0.42' },
-      { op: 0, text: ' and supplementary fly ash content limited to 20%.' },
-    ],
+    oldClause:
+      '2.4 MIX DESIGN: Elevated structural slab concrete shall achieve a minimum compressive strength of 3,000 psi at 28 days with maximum water-cementitious ratio of 0.50 and supplementary fly ash content limited to 20%.',
+    newClause:
+      '2.4 MIX DESIGN: Elevated structural slab concrete shall achieve a minimum compressive strength of 4,500 psi at 28 days with maximum water-cementitious ratio of 0.42 and supplementary fly ash content limited to 20%.',
   },
   {
     id: 'hardware',
@@ -40,16 +35,10 @@ const SPECIMEN_CASES: SpecimenCase[] = [
     title: 'Door Hardware',
     pageShift: 'pp. 284–302 → pp. 291–309',
     strippedHeaderSample: 'SECTION 08 71 00 - Page #',
-    riskFlags: ['Install Only → Furnish and Install', '5-Year Warranty'],
-    tokens: [
-      { op: 0, text: '1.2 SCOPE OF WORK: Access control electrified mortise locksets and power transfer hinges shall be ' },
-      { op: -1, text: 'furnished by Owner and installed only', riskMatch: 'install only' },
-      { op: 1, text: 'furnished and installed', riskMatch: 'furnish and install' },
-      { op: 0, text: ' by Division 08 Contractor, including a ' },
-      { op: -1, text: '2-year', riskMatch: '2-year' },
-      { op: 1, text: '5-year', riskMatch: '5-year' },
-      { op: 0, text: ' manufacturer warranty on electrified trim.' },
-    ],
+    oldClause:
+      '1.2 SCOPE OF WORK: Access control electrified mortise locksets and power transfer hinges shall be install only by Division 08 Contractor (material by Owner), including a 2-year manufacturer warranty on electrified trim.',
+    newClause:
+      '1.2 SCOPE OF WORK: Access control electrified mortise locksets and power transfer hinges shall be furnish and install by Division 08 Contractor, including a 5-year manufacturer warranty on electrified trim.',
   },
   {
     id: 'electrical',
@@ -58,16 +47,10 @@ const SPECIMEN_CASES: SpecimenCase[] = [
     title: 'Panelboards & Switchgear',
     pageShift: 'pp. 512–526 → pp. 521–535',
     strippedHeaderSample: '26 24 16 · Addendum Set',
-    riskFlags: ['22 kAIC → 65 kAIC', '$18,500 Allowance'],
-    tokens: [
-      { op: 0, text: '2.2 DISTRIBUTION PANELBOARDS: Main bus bars shall be tin-plated copper rated minimum ' },
-      { op: -1, text: '22,000 AIC', riskMatch: '22,000 AIC' },
-      { op: 1, text: '65,000 AIC', riskMatch: '65,000 AIC' },
-      { op: 0, text: ' fully rated (series rating prohibited). Include an ' },
-      { op: -1, text: 'owner-carried utility metering', riskMatch: 'owner-carried' },
-      { op: 1, text: '$18,500 feeder metering allowance', riskMatch: 'allowance' },
-      { op: 0, text: ' in base bid.' },
-    ],
+    oldClause:
+      '2.2 DISTRIBUTION PANELBOARDS: Main bus bars shall be tin-plated copper rated minimum 22,000 AIC fully rated (series rating prohibited). Include by owner utility metering coordination.',
+    newClause:
+      '2.2 DISTRIBUTION PANELBOARDS: Main bus bars shall be tin-plated copper rated minimum 65,000 AIC fully rated (series rating prohibited). Include a $18,500 feeder metering allowance in base bid.',
   },
 ];
 
@@ -83,8 +66,29 @@ export function HeroRedlineSpecimen({
   const [activeId, setActiveId] = useState<string>('concrete');
   const [viewMode, setViewMode] = useState<DiffViewMode>('inline');
 
+  const computedCases = useMemo(
+    () =>
+      SPECIMEN_DEFINITIONS.map((item) => {
+        const diff = computeWordDiff(item.oldClause, item.newClause);
+        const deltaChips = extractParagraphDeltaChips(item.oldClause, item.newClause);
+        const riskFlags = Array.from(
+          new Set([
+            ...detectRiskFlags(item.oldClause),
+            ...detectRiskFlags(item.newClause),
+          ])
+        );
+        return {
+          ...item,
+          tokens: diff.tokens,
+          deltaChips,
+          riskFlags,
+        };
+      }),
+    []
+  );
+
   const activeCase =
-    SPECIMEN_CASES.find((c) => c.id === activeId) ?? SPECIMEN_CASES[0];
+    computedCases.find((c) => c.id === activeId) ?? computedCases[0];
 
   return (
     <div className="relative bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col justify-between h-full">
@@ -111,7 +115,7 @@ export function HeroRedlineSpecimen({
         <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] font-medium text-slate-500">
-              Interactive Redline Specimen · Unclouded Addendum Preview
+              Live Engine Specimen · Unclouded Addendum Preview
             </div>
             <div className="mt-0.5 font-display text-sm font-bold text-slate-900 truncate">
               <span className="font-mono text-[#1E40AF] mr-2 tabular-nums">
@@ -155,7 +159,7 @@ export function HeroRedlineSpecimen({
 
         {/* Trade Tabs */}
         <div className="px-4 sm:px-5 py-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-1.5">
-          {SPECIMEN_CASES.map((item) => {
+          {computedCases.map((item) => {
             const active = item.id === activeCase.id;
             return (
               <button
@@ -189,27 +193,42 @@ export function HeroRedlineSpecimen({
 
         {/* Live Rendered Diff Clause */}
         <div className="p-4 sm:p-5 space-y-3">
+          {activeCase.deltaChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {activeCase.deltaChips.map((chip) => (
+                <span
+                  key={chip}
+                  className="inline-flex items-center px-2 py-0.5 rounded-xs border border-amber-300 bg-amber-50/80 text-[11px] font-mono font-semibold text-amber-950 tabular-nums"
+                >
+                  {chip}
+                </span>
+              ))}
+            </div>
+          )}
+
           <RedlineTokenRenderer tokens={activeCase.tokens} mode={viewMode} compact />
 
-          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-amber-900">
-            <span className="font-semibold text-[#B45309] inline-flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Money &amp; Risk Flagged:
-            </span>
-            {activeCase.riskFlags.map((flag, i) => (
-              <span key={flag} className="font-mono">
-                {flag}
-                {i < activeCase.riskFlags.length - 1 ? ' ·' : ''}
+          {activeCase.riskFlags.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-amber-900">
+              <span className="font-semibold text-[#B45309] inline-flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Money &amp; Risk Flagged:
               </span>
-            ))}
-          </div>
+              {activeCase.riskFlags.map((flag, i) => (
+                <span key={flag} className="font-mono">
+                  {flag}
+                  {i < activeCase.riskFlags.length - 1 ? ' ·' : ''}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Specimen Action Footer */}
       <div className="px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs text-slate-600">
-          Test the full 26-page multi-division sample manual locally
+          Generated live by SpecDelta&apos;s word-diff &amp; context-risk engine
         </span>
         <button
           type="button"

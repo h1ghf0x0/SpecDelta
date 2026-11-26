@@ -1,6 +1,8 @@
 import DiffMatchPatch from 'diff-match-patch';
 import {
   detectRiskFlags,
+  extractContextRiskMatch,
+  extractParagraphDeltaChips,
   findRiskMatchInToken,
   getDivisionTitle,
 } from './csiDictionary';
@@ -13,7 +15,7 @@ import type {
   WordDiffToken,
 } from '../types/spec';
 
-function computeWordDiff(oldText: string, newText: string): {
+export function computeWordDiff(oldText: string, newText: string): {
   tokens: WordDiffToken[];
   addedWords: number;
   deletedWords: number;
@@ -62,11 +64,106 @@ function computeWordDiff(oldText: string, newText: string): {
     tokens.push({
       op: op as -1 | 0 | 1,
       text: chunkText,
-      riskMatch: op !== 0 ? findRiskMatchInToken(chunkText) : undefined,
     });
   }
 
+  // Second pass: sliding context window around changed tokens so "3,000" + " psi" highlights properly
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.op === 0 || !tok.text.trim()) continue;
+
+    let prevCtx = '';
+    for (let p = i - 1; p >= 0 && prevCtx.length < 32; p--) {
+      if (tokens[p].op === 0 || tokens[p].op === tok.op) {
+        prevCtx = tokens[p].text + prevCtx;
+      }
+    }
+    if (prevCtx.length > 32) prevCtx = prevCtx.slice(-32);
+
+    let nextCtx = '';
+    for (let n = i + 1; n < tokens.length && nextCtx.length < 32; n++) {
+      if (tokens[n].op === 0 || tokens[n].op === tok.op) {
+        nextCtx += tokens[n].text;
+      }
+    }
+    if (nextCtx.length > 32) nextCtx = nextCtx.slice(0, 32);
+
+    tok.riskMatch = extractContextRiskMatch(prevCtx, tok.text, nextCtx);
+  }
+
   return { tokens, addedWords, deletedWords };
+}
+
+function paragraphWordSimilarity(a: string, b: string): number {
+  const normA = a.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1);
+  const normB = b.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1);
+  if (normA.length === 0 || normB.length === 0) return 0;
+
+  const setA = new Set(normA);
+  const setB = new Set(normB);
+  let overlap = 0;
+  for (const w of setA) {
+    if (setB.has(w)) overlap++;
+  }
+  const jaccard = overlap / (setA.size + setB.size - overlap);
+  const containment = overlap / Math.min(setA.size, setB.size);
+  return Math.max(jaccard, containment * 0.85);
+}
+
+function pairChangedParagraphsBySimilarity(
+  oldItems: string[],
+  newItems: string[]
+): Array<{ oldText: string; newText: string }> {
+  const usedNew = new Set<number>();
+  const paired: Array<{ oldText: string; newText: string; newIdx: number | null }> = [];
+
+  for (let i = 0; i < oldItems.length; i++) {
+    const oldT = oldItems[i];
+    let bestIdx = -1;
+    let bestScore = 0;
+
+    for (let j = 0; j < newItems.length; j++) {
+      if (usedNew.has(j)) continue;
+      const score = paragraphWordSimilarity(oldT, newItems[j]);
+      if (score >= 0.45 && score > bestScore) {
+        bestScore = score;
+        bestIdx = j;
+      }
+    }
+
+    if (bestIdx !== -1) {
+      usedNew.add(bestIdx);
+      paired.push({ oldText: oldT, newText: newItems[bestIdx], newIdx: bestIdx });
+    } else {
+      paired.push({ oldText: oldT, newText: '', newIdx: null });
+    }
+  }
+
+  // Insert unmatched pure additions in relative order
+  const output: Array<{ oldText: string; newText: string }> = [];
+  let nextNewToEmit = 0;
+
+  for (const item of paired) {
+    if (item.newIdx !== null) {
+      while (nextNewToEmit < item.newIdx) {
+        if (!usedNew.has(nextNewToEmit)) {
+          output.push({ oldText: '', newText: newItems[nextNewToEmit] });
+        }
+        nextNewToEmit++;
+      }
+      if (nextNewToEmit === item.newIdx) nextNewToEmit++;
+    }
+    output.push({ oldText: item.oldText, newText: item.newText });
+  }
+
+  while (nextNewToEmit < newItems.length) {
+    if (!usedNew.has(nextNewToEmit)) {
+      output.push({ oldText: '', newText: newItems[nextNewToEmit] });
+    }
+    nextNewToEmit++;
+  }
+
+  return output;
 }
 
 function diffSectionParagraphs(oldParas: string[], newParas: string[]): {
@@ -122,25 +219,31 @@ function diffSectionParagraphs(oldParas: string[], newParas: string[]): {
         nextItems.push(lineArray[nextData.charCodeAt(k) - 0x100] ?? '');
       }
 
-      const maxLen = Math.max(items.length, nextItems.length);
-      for (let m = 0; m < maxLen; m++) {
-        const oldT = items[m] ?? '';
-        const newT = nextItems[m] ?? '';
+      const simPairs = pairChangedParagraphsBySimilarity(items, nextItems);
+      let newOffset = 0;
+
+      for (const pair of simPairs) {
+        const oldT = pair.oldText;
+        const newT = pair.newText;
         const { tokens, addedWords, deletedWords } = computeWordDiff(oldT, newT);
         totalAdded += addedWords;
         totalDeleted += deletedWords;
         const riskFlags = Array.from(
           new Set([...detectRiskFlags(oldT), ...detectRiskFlags(newT)])
         );
+        const deltaChips = extractParagraphDeltaChips(oldT, newT);
+        const ctxIdx = Math.min(Math.max(0, newCursor + newOffset), Math.max(0, newParas.length - 1));
         changedParagraphs.push({
-          paragraphIndex: newCursor + m,
+          paragraphIndex: newCursor + newOffset,
           oldText: oldT,
           newText: newT,
-          contextBefore: newParas[Math.max(0, newCursor + m - 1)] ?? '',
-          contextAfter: newParas[newCursor + m + 1] ?? '',
+          contextBefore: newT ? newParas[Math.max(0, ctxIdx - 1)] ?? '' : newParas[Math.max(0, newCursor - 1)] ?? '',
+          contextAfter: newT ? newParas[ctxIdx + 1] ?? '' : newParas[newCursor] ?? '',
           tokens,
           riskFlags,
+          deltaChips,
         });
+        if (newT) newOffset++;
       }
 
       newCursor += nextItems.length;
@@ -161,6 +264,7 @@ function diffSectionParagraphs(oldParas: string[], newParas: string[]): {
           contextAfter: newParas[newCursor] ?? '',
           tokens,
           riskFlags: detectRiskFlags(oldT),
+          deltaChips: [],
         });
       }
     } else if (op === 1) {
@@ -176,6 +280,7 @@ function diffSectionParagraphs(oldParas: string[], newParas: string[]): {
           contextAfter: newParas[newCursor + m + 1] ?? '',
           tokens,
           riskFlags: detectRiskFlags(newT),
+          deltaChips: [],
         });
       }
       newCursor += items.length;
@@ -211,7 +316,6 @@ function areTitlesEquivalent(
   }
   if (normA === normB) return true;
 
-  // Allow slight subtitle edits within the same CSI Division via Jaccard word overlap >= 0.8
   if (oldSec.division === newSec.division) {
     const wordsA = new Set(normA.split(' ').filter((w) => w.length > 1));
     const wordsB = new Set(normB.split(' ').filter((w) => w.length > 1));
@@ -247,6 +351,11 @@ function buildPairedSectionResult(
   const status = changedParagraphs.length === 0 ? 'unchanged' : 'modified';
   const riskFlags = Array.from(new Set(changedParagraphs.flatMap((p) => p.riskFlags)));
 
+  let fullTokens: WordDiffToken[] | undefined;
+  if (status === 'modified' && oldSec.text.length + newSec.text.length <= 80000) {
+    fullTokens = computeWordDiff(oldSec.text, newSec.text).tokens;
+  }
+
   return {
     sectionCode: newSec.normalizedCode,
     oldRawCode: oldSec.rawCode,
@@ -264,6 +373,7 @@ function buildPairedSectionResult(
         ? `${newSec.startPage}`
         : `${newSec.startPage}–${newSec.endPage}`,
     changedParagraphs,
+    fullTokens,
     fullOldText: oldSec.text,
     fullNewText: newSec.text,
     riskFlags,
@@ -279,6 +389,34 @@ export function compareParsedBooks(
   newBook: SingleSpecParseOutput
 ): DiffRunOutput {
   const diffStart = performance.now();
+
+  const oldMostlyScanned = Boolean(oldBook.isMostlyScanned);
+  const newMostlyScanned = Boolean(newBook.isMostlyScanned);
+
+  if (oldMostlyScanned || newMostlyScanned) {
+    return {
+      results: [],
+      diagnostics: {
+        oldFileName: oldBook.fileName,
+        newFileName: newBook.fileName,
+        oldPageCount: oldBook.pageCount,
+        newPageCount: newBook.pageCount,
+        oldSectionCount: oldBook.sections.length,
+        newSectionCount: newBook.sections.length,
+        oldStrippedPatterns: oldBook.strippedPatterns,
+        newStrippedPatterns: newBook.strippedPatterns,
+        parseTimeMs: Math.max(oldBook.parseTimeMs, newBook.parseTimeMs),
+        scannedWarning: true,
+        oldScannedPages: oldBook.scannedPages ?? [],
+        newScannedPages: newBook.scannedPages ?? [],
+        oldMostlyScanned,
+        newMostlyScanned,
+        outlineHintsUsed: (oldBook.outlineHintsUsed ?? 0) + (newBook.outlineHintsUsed ?? 0),
+        appliedNoiseConfig: newBook.appliedNoiseConfig ?? oldBook.appliedNoiseConfig,
+        renumberedCount: 0,
+      },
+    };
+  }
 
   const oldMap = new Map<string, CsiSection>();
   for (const sec of oldBook.sections) oldMap.set(sec.normalizedCode, sec);
@@ -329,6 +467,7 @@ export function compareParsedBooks(
     const divisionTitle = getDivisionTitle(division);
     const addedWords = (newSec.text.match(/\S+/g) ?? []).length;
     const riskFlags = detectRiskFlags(newSec.text);
+    const tokens: WordDiffToken[] = [{ op: 1, text: newSec.text, riskMatch: findRiskMatchInToken(newSec.text) }];
     results.push({
       sectionCode: newSec.normalizedCode,
       oldRawCode: null,
@@ -347,7 +486,9 @@ export function compareParsedBooks(
         contextAfter: '',
         tokens: [{ op: 1, text: p, riskMatch: findRiskMatchInToken(p) }],
         riskFlags: detectRiskFlags(p),
+        deltaChips: [],
       })),
+      fullTokens: tokens,
       fullOldText: '',
       fullNewText: newSec.text,
       riskFlags,
@@ -363,6 +504,7 @@ export function compareParsedBooks(
     const divisionTitle = getDivisionTitle(division);
     const deletedWords = (oldSec.text.match(/\S+/g) ?? []).length;
     const riskFlags = detectRiskFlags(oldSec.text);
+    const tokens: WordDiffToken[] = [{ op: -1, text: oldSec.text, riskMatch: findRiskMatchInToken(oldSec.text) }];
     results.push({
       sectionCode: oldSec.normalizedCode,
       oldRawCode: oldSec.rawCode,
@@ -381,7 +523,9 @@ export function compareParsedBooks(
         contextAfter: '',
         tokens: [{ op: -1, text: p, riskMatch: findRiskMatchInToken(p) }],
         riskFlags: detectRiskFlags(p),
+        deltaChips: [],
       })),
+      fullTokens: tokens,
       fullOldText: oldSec.text,
       fullNewText: '',
       riskFlags,
@@ -409,6 +553,10 @@ export function compareParsedBooks(
       newStrippedPatterns: newBook.strippedPatterns,
       parseTimeMs: totalParseMs,
       scannedWarning: oldBook.scannedWarning || newBook.scannedWarning,
+      oldScannedPages: oldBook.scannedPages ?? [],
+      newScannedPages: newBook.scannedPages ?? [],
+      oldMostlyScanned: false,
+      newMostlyScanned: false,
       outlineHintsUsed: (oldBook.outlineHintsUsed ?? 0) + (newBook.outlineHintsUsed ?? 0),
       appliedNoiseConfig: newBook.appliedNoiseConfig ?? oldBook.appliedNoiseConfig,
       renumberedCount,
