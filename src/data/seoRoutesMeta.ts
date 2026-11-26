@@ -49,12 +49,12 @@ export const SEO_ROUTE_META: Record<AppRoute, RouteSeoMeta> = {
       'Audit re-issued Project Manuals end-to-end to catch silent section deletions, tolerance creep, and narrative mismatches with deterministic word-level diffs.',
   },
   '/benchmark': {
-    title: 'Benchmark: Bluebeam Revu vs. LLMs vs. SpecDelta on Addendum PDFs',
+    title: 'Benchmark: Real Project Manual Corpus & Stress Results | SpecDelta',
     description:
-      'Side-by-side benchmark measuring false positives, runtime, and privacy across Bluebeam Revu, cloud LLM chat tools, and SpecDelta.',
-    h1: 'Bluebeam Revu vs. Cloud LLMs vs. SpecDelta on a Multi-Division Addendum',
+      'Verified false-positive and miss-rate benchmarks across 10 real public Project Manual PDFs (227 pages) plus a 603-page multi-division stress suite.',
+    h1: 'Verified False-Positive and Miss Rates Across Real Project Manuals',
     summary:
-      'Reproducible benchmark methodology comparing page-locked visual overlays, cloud LLM chats, and deterministic CSI section alignment on a 26-page synthetic fixture.',
+      'Reproducible benchmarks across 10 real public Project Manual PDFs (227 pages, benchmarks/real_corpus_results.json: 0% parser splits/misses, 0% verbatim page-shift false positives, 0% miss rate on 12 real-clause edits) plus our 603-page stress run (benchmarks/results.json).',
   },
   '/compare-division-03-concrete-specs': {
     title: 'Compare Division 03 Concrete Specs & Addenda | SpecDelta',

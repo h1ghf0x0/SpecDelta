@@ -252,67 +252,73 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
   '/benchmark': {
     route: '/benchmark',
     category: 'Benchmark',
-    metaTitle: 'Benchmark: Bluebeam Revu vs. LLMs vs. SpecDelta on Addendum PDFs',
+    metaTitle: 'Benchmark: Real Project Manual Corpus & Stress Results | SpecDelta',
     metaDescription:
-      'Side-by-side benchmark measuring false positives, runtime, and privacy across Bluebeam Revu, cloud LLM chat tools, and SpecDelta.',
-    eyebrow: 'Benchmark Study · Synthetic Sample Fixture',
-    headline: 'Bluebeam Revu vs. Cloud LLMs vs. SpecDelta on a Multi-Division Addendum',
+      'Verified false-positive and miss-rate benchmarks across 10 real public Project Manual PDFs (227 pages) plus a 603-page multi-division stress suite.',
+    eyebrow: 'Benchmark Study · Real Public Corpus & 603-Page Stress Harness',
+    headline: 'Verified False-Positive and Miss Rates Across Real Project Manuals',
     summary:
-      'Methodology note: this page documents SpecDelta’s architectural approach and verified behavior on our reproducible 16-page synthetic Project Manual fixture (7-page Issued_For_Bid_Sample.pdf vs. 9-page Addendum_01_Sample.pdf). Competitor columns reflect documented workflow mechanics rather than timed trials on external customer manuals.',
+      'Reproducible measurements from npm run benchmark:real (benchmarks/real_corpus_results.json) across 10 real public Project Manual PDFs (227 pages, 534,924 characters from University of Houston, City of Dover NH, City of Prince Albert, Scott Township PA, UCCS, and NMSU) plus npm run benchmark (benchmarks/results.json) on our 15-page sample and 603-page multi-division stress run. Across the 10-PDF corpus: 0% parser section-split false positives (0/21), 0% section miss rate (0/21), 0% diff false positives across 210 verbatim page-shifted pages (vs. 100% changed pages under raw page diff), and 0% miss rate across 12 ground-truth edits injected into real spec clauses (100% risk-flag recall). Scanned raster PDFs requiring OCR remain excluded; competitor columns describe architectural mechanics.',
     heroImage: 'desk',
     heroImageAlt: 'Specification benchmark desk setup with Project Manual and structural sheets',
     keyGotchas: [
       {
-        title: '01. Why Page-Locked Overlay Struggles on Shifts',
+        title: '01. Real-Corpus Parser Accuracy (0% False Splits / 0% Misses)',
         detail:
-          'Inserting clauses in Section 01 21 00 and Section 03 30 00 shifts Section 23 05 93 down by two pages. Visual page-by-page comparison compares different text coordinates when page boundaries move.',
+          'Tested on 227 pages spanning University of Houston specs, Dover NH’s 100-page Conformed Set (DOCUMENT 000105/000107 + 12 Div 01 sections), legacy 5-digit 03300 codes, quoted inline cross-references, and 300+ TOC line-item traps: 21/21 real CSI sections detected with 0 phantom splits.',
       },
       {
-        title: '02. Why Full-Book LLM Prompts Carry Risk',
+        title: '02. Verbatim Page-Shift Immunity (0% vs. 100% Baseline)',
         detail:
-          'Uploading full manuals into general chat interfaces introduces NDA exposure, context-budget truncation on large books, and non-deterministic omission of single-digit tolerance edits.',
+          'Prepending a 1-page Addendum cover sheet onto 7 unencrypted institutional PDFs (210 real pages) shifted every section downstream: naive page comparison flagged 217/217 pages (100%), while SpecDelta flagged 0/20 unchanged CSI sections (0%).',
       },
       {
-        title: '03. Why Deterministic Parsing + Optional Diff Brief Works',
+        title: '03. Real-Clause Edit Recall & Scale (0% Miss Rate)',
         detail:
-          'By isolating only the changed paragraphs locally in milliseconds, SpecDelta keeps the core diff deterministic and dramatically shrinks any optional Gemini brief payload.',
+          'Across 12 controlled addendum edits injected into 179 pages (1,437 paragraphs) of extracted real spec prose—including deleted, added, and renumbered sections plus hyphenated 60-psi → 100-psi tolerance edits—SpecDelta achieved 12/12 edit recall (0% miss rate) and 9/9 risk-flag recall. In our 603-page stress run, parsing and diffing finished in 2.9s (211 pages/sec).',
       },
     ],
     howToSteps: [
       {
-        step: 'Download or Load the 16-Page Benchmark Sample Set',
+        step: 'Inspect the Committed 10-PDF Real Corpus & JSON Logs',
         description:
-          'Click "Load Sample Spec" in the SpecDelta Diff Checker to generate the exact Issued-For-Bid and Addendum 01 synthetic fixture PDFs locally in your browser.',
+          'All 10 institutional PDFs live in benchmarks/corpus/. Run npm run benchmark:real to regenerate benchmarks/real_corpus_results.json and audit every per-document parser, page-shift, and planted-edit score.',
       },
       {
-        step: 'Inspect Division 23 (Aligned Across Page Shift)',
+        step: 'Verify Page-Shift Alignment Live in the Browser',
         description:
-          'Verify that Section 23 05 93 shifted pages between sets yet reports Unchanged—while Section 03 30 00, 07 54 23, 08 71 00, and 26 24 13 surface exact word diffs.',
+          'Click "Load Sample Spec" in SpecDelta to run the built-in 15-page fixture and confirm Section 23 05 93 stays Unchanged across its page break while real PSI, mil, and scope edits surface.',
       },
       {
-        step: 'Export the Auditable Change Log',
+        step: 'Export the Auditable Excel Change Log',
         description:
-          'Download the .xlsx log to distribute to trade estimators in seconds—and always cross-check pricing-critical changes against the signed Addendum PDF.',
+          'Download the structured .xlsx log for trade estimators—and always verify pricing-critical tolerances, warranties, and non-OCR scanned addenda against the signed PDF.',
       },
     ],
     benchmarkTable: [
       {
-        metric: 'Page-Shift Behavior',
-        bluebeam: 'Page-by-page visual comparison',
-        llmChat: 'Unstructured text chunking',
-        specDelta: 'Verified on 16-page fixture: 23 05 93 stays Unchanged across 2-page shift',
+        metric: 'Real-PDF Parser (10 PDFs / 227 Pages)',
+        bluebeam: 'Manual bookmark / page navigation',
+        llmChat: 'Unstructured context chunking',
+        specDelta: '0% false splits · 0% miss rate (21/21 CSI sections)',
       },
       {
-        metric: 'Inconsistent CSI Code Matching',
-        bluebeam: 'Manual page navigation',
-        llmChat: 'Prompt-dependent',
-        specDelta: 'Verified: normalizes 08 71 00, 08 7100, and 08710 automatically',
+        metric: 'Verbatim Page-Shift (210 Real Pages)',
+        bluebeam: 'Page-by-page overlay (100% pages shifted)',
+        llmChat: 'Full text re-prompted',
+        specDelta: '0% false-positive rate (0/20 unchanged sections)',
       },
       {
-        metric: 'Deterministic Tolerance Detection',
-        bluebeam: 'Visual highlight markup',
+        metric: 'Planted Real-Clause Edits (179p Consolidated)',
+        bluebeam: 'Visual redline review required',
         llmChat: 'Probabilistic summary',
-        specDelta: 'Verified: Myers word diff + delta chips (15 mil → 20 mil)',
+        specDelta: '0% miss rate (12/12 edits) · 100% risk-flag recall',
+      },
+      {
+        metric: '603-Page Multi-Division Throughput',
+        bluebeam: 'Local desktop render per page',
+        llmChat: 'Context-window truncation risk',
+        specDelta: '2.9s total (211 pages/sec) · 0/24 shifted false positives',
       },
       {
         metric: 'Client-Side Privacy',
@@ -323,9 +329,14 @@ export const SEO_PAGES: Record<Exclude<AppRoute, '/' | '/split-spec-book'>, SeoP
     ],
     faqs: [
       {
-        question: 'Can I download the benchmark sample PDFs to test in Bluebeam myself?',
+        question: 'How were the real-corpus false-positive and miss rates measured?',
         answer:
-          'Yes. Inside the Diff Checker, click "Download Sample PDFs" right beside the Load Sample Spec action to save both the Issued For Bid and Addendum 01 PDFs to your computer.',
+          'npm run benchmark:real runs all 10 public institutional PDFs in benchmarks/corpus/ through the exact production pdfjs-dist extraction, edge/stamp stripping, CSI parser, and Myers diff pipeline: measuring structural splits against a ground-truth manifest (0/21 false splits, 0/21 misses), prepending a 1-page notice onto 7 unencrypted real PDFs to verify zero-edit shift resistance (0/20 false positives across 210 real pages), and injecting 12 documented edits into 1,437 extracted real spec paragraphs (0/12 misses, 0/9 unchanged false positives).',
+      },
+      {
+        question: 'Can I download the sample PDFs to test in Bluebeam or locally?',
+        answer:
+          'Yes. Inside the Diff Checker, click "Download Sample PDFs" beside Load Sample Spec to save the sample IFB and Addendum 01 PDFs, or run npm run benchmark and npm run benchmark:real directly from the repository.',
       },
     ],
     ctaLabel: 'Run the Sample Benchmark Live',

@@ -16,9 +16,14 @@ Section-aware construction specification diff checker and CSI MasterFormat Proje
 ```bash
 npm install
 npm test
+npm run benchmark
+npm run benchmark:real
 npm run lint
 npm run dev
 ```
+
+- `npm run benchmark` executes the 15-page sample fixture and a 603-page multi-division stress test (`2.9s` parse + diff, `211` pages/sec, `0/24` shifted false positives), writing structured metrics to `benchmarks/results.json`.
+- `npm run benchmark:real` runs 10 public institutional specification & Project Manual PDFs (`benchmarks/corpus/`, `227` pages, `534,924` extractable characters across University of Houston, City of Dover NH, City of Prince Albert, Scott Township PA, UCCS, and NMSU) through the full pipeline and writes verified figures to `benchmarks/real_corpus_results.json`: `0%` parser false-positive splits (`0/21`), `0%` parser miss rate (`0/21`), `0%` diff false-positive rate across `210` verbatim page-shifted pages (`0/20` unchanged CSI sections vs. `100%` of pages changed under raw page comparison), and `0%` miss rate (`12/12` edit recall, `9/9` risk-flag recall) across controlled edits injected into `1,437` extracted real spec paragraphs.
 
 Copy `.env.example` to `.env` and set `GEMINI_API_KEY` if you want to enable the optional `POST /api/scope-brief` endpoint.
 

@@ -17,27 +17,67 @@ export interface OutlineSectionHint {
   title: string;
 }
 
+function stripTrailingPageSuffix(title: string): string {
+  return title
+    .replace(/\s*(?:[-–—|•]\s*)?Page\s+\d+(?:\s*(?:of|\/)\s*\d+)?\s*$/i, '')
+    .trim();
+}
+
 export function matchCsiHeader(
-  line: string
-): { rawCode: string; normalizedCode: string; title: string } | null {
+  line: string,
+  prevLineText?: string
+): { rawCode: string; normalizedCode: string; title: string; isExplicit: boolean } | null {
   const trimmed = line.trim();
   // Skip Table of Contents dot-leaders or trailing section page stamps
   if (/\.\.{3,}/.test(trimmed) || /\.{2,}\s*\d+\s*$/.test(trimmed)) return null;
   if (/^\d{2}\s+\d{2}\s+\d{2}\s*[-–]\s*\d{1,3}$/.test(trimmed)) return null;
 
+  // Reject wrapped prose cross-references (e.g. "Refer to" -> "Section 096500 - Resilient")
+  // or wrapped list markers (e.g. "2." -> "Section 012400 - SCHEDULE OF VALUES: Allocation...")
+  const prevTrimmed = (prevLineText ?? '').trim();
+  const prevEndsWithCrossRef =
+    /\b(?:refer\s+to|see|per|under|in|with|from|to|of|and|or|section|sections)\s*$/i.test(
+      prevTrimmed
+    ) ||
+    /(?:^|\s)(?:\d{1,2}|[A-Za-z])\.\s*$/.test(prevTrimmed) ||
+    /[,;:]\s*$/.test(prevTrimmed);
+
+  const isProseDescriptionTitle = (t: string): boolean => {
+    if (/^["'“]/.test(t) || /[.?!;]["'”)\]\s]*$/.test(t)) return true;
+    if (/:(?:\s+\S+){3,}/.test(t)) return true;
+    if (/\b(?:for\s+more\s+information|for\s+additional|as\s+specified|is\s+required)\b/i.test(t)) {
+      return true;
+    }
+    const words = t.split(/\s+/);
+    if (
+      words.length >= 4 &&
+      t !== t.toUpperCase() &&
+      /\b(?:in|of|as|to|by|with|from|into|than|that)\s*$/.test(t)
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   const explicitMatch = trimmed.match(
-    /^SECTION\s+(\d{2}\s+\d{2}\s+\d{2}(?:\.\d{2})?|\d{2}\s+\d{4}(?:\.\d{2})?|\d{5,6}(?:\.\d{2})?)\s*(?:[-–—:]\s*|\s+)?(.*)$/i
+    /^(SECTION|DOCUMENT)\s+(\d{2}\s+\d{2}\s+\d{2}(?:\.\d{2})?|\d{2}\s+\d{4}(?:\.\d{2})?|\d{5,6}(?:\.\d{2})?)\s*(?:[-–—:]\s*|\s+)?(.*)$/i
   );
   if (explicitMatch) {
-    const rawCode = explicitMatch[1].trim();
+    const prefixWord = explicitMatch[1].toUpperCase();
+    const rawCode = explicitMatch[2].trim();
     const normalizedCode = normalizeCsiCode(rawCode);
     const divNum = parseInt(normalizedCode.slice(0, 2), 10);
     if (!Number.isNaN(divNum) && divNum >= 0 && divNum <= 49) {
-      const title = (explicitMatch[2] || '').replace(/^[-–—:\s]+/, '').trim();
+      let title = stripTrailingPageSuffix((explicitMatch[3] || '').replace(/^[-–—:\s]+/, '').trim());
+      if (isProseDescriptionTitle(title)) return null;
+      if (prevEndsWithCrossRef && title.length > 0 && title !== title.toUpperCase()) {
+        return null;
+      }
       return {
-        rawCode: `SECTION ${rawCode}`,
+        rawCode: `${prefixWord} ${rawCode}`,
         normalizedCode,
         title: title || 'Untitled Section',
+        isExplicit: true,
       };
     }
   }
@@ -50,10 +90,15 @@ export function matchCsiHeader(
     const normalizedCode = normalizeCsiCode(rawCode);
     const divNum = parseInt(normalizedCode.slice(0, 2), 10);
     if (!Number.isNaN(divNum) && divNum >= 0 && divNum <= 49) {
+      const title = stripTrailingPageSuffix(implicitMatch[2].trim());
+      if (prevEndsWithCrossRef || isProseDescriptionTitle(title)) {
+        return null;
+      }
       return {
         rawCode,
         normalizedCode,
-        title: implicitMatch[2].trim(),
+        title,
+        isExplicit: false,
       };
     }
   }
@@ -202,10 +247,26 @@ export function chunkIntoCsiSections(
   const sections: CsiSection[] = [];
   let outlineHintsUsed = 0;
   const pagesWithInlineHeaders = new Set<number>();
+  const csiCandidatesPerPage = new Map<number, number>();
+  const tocPages = new Set<number>();
 
-  for (const line of lines) {
-    if (matchCsiHeader(line.text)) {
-      pagesWithInlineHeaders.add(line.page);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const prevText = i > 0 && lines[i - 1].page === line.page ? lines[i - 1].text : undefined;
+    if (/\b(?:TABLE\s+OF\s+CONTENTS|LIST\s+OF\s+SECTIONS|INDEX\s+OF\s+SECTIONS)\b/i.test(line.text)) {
+      tocPages.add(line.page);
+    }
+    const m = matchCsiHeader(line.text, prevText);
+    if (m) {
+      csiCandidatesPerPage.set(line.page, (csiCandidatesPerPage.get(line.page) ?? 0) + 1);
+      if (m.isExplicit || !tocPages.has(line.page)) {
+        pagesWithInlineHeaders.add(line.page);
+      }
+    }
+  }
+  for (const [pg, cnt] of csiCandidatesPerPage.entries()) {
+    if (cnt >= 5) {
+      tocPages.add(pg);
     }
   }
 
@@ -244,7 +305,7 @@ export function chunkIntoCsiSections(
     // Fallback: if entering a new page that has an outline CSI bookmark and NO inline CSI header, start that section
     if (line.page !== lastSeenPage) {
       lastSeenPage = line.page;
-      if (!pagesWithInlineHeaders.has(line.page)) {
+      if (!pagesWithInlineHeaders.has(line.page) && !tocPages.has(line.page)) {
         const pageHints = outlineHintsByPage.get(line.page);
         if (pageHints && pageHints.length > 0) {
           const hint = pageHints[0];
@@ -264,7 +325,13 @@ export function chunkIntoCsiSections(
       }
     }
 
-    const headerMatch = matchCsiHeader(line.text);
+    const prevText = i > 0 && lines[i - 1].page === line.page ? lines[i - 1].text : undefined;
+    const rawHeaderMatch = matchCsiHeader(line.text, prevText);
+    const headerMatch =
+      rawHeaderMatch &&
+      (!tocPages.has(line.page) || rawHeaderMatch.normalizedCode === '00 01 10')
+        ? rawHeaderMatch
+        : null;
 
     if (headerMatch) {
       let resolvedTitle = headerMatch.title;
@@ -273,7 +340,7 @@ export function chunkIntoCsiSections(
         i + 1 < lines.length &&
         lines[i + 1].page === line.page
       ) {
-        const nextCandidate = lines[i + 1].text.trim();
+        const nextCandidate = stripTrailingPageSuffix(lines[i + 1].text.trim());
         if (
           nextCandidate.length > 2 &&
           nextCandidate.length < 85 &&

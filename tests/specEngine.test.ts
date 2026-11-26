@@ -12,6 +12,7 @@ import { buildCsvString, buildXlsxBytes } from '../src/utils/ooxmlBuilder';
 import {
   assemblePageLinesFromSpans,
   chunkIntoCsiSections,
+  matchCsiHeader,
 } from '../src/utils/pdfSectionParser';
 import { generateSampleProjectManuals } from '../src/utils/sampleSpecGenerator';
 import {
@@ -101,22 +102,81 @@ test('risk dictionary & delta chips catch threshold and modal directive shifts w
   const twoModalFlags = detectDeltaRiskFlags(twoModalsDiff.tokens, twoModalsOld, twoModalsNew);
   assert.ok(twoModalFlags.includes('Directive removed: shall'));
   assert.ok(!twoModalFlags.includes('Directive: shall → may'));
+
+  // Regression 4: Hyphenated engineering units ("60-psi" -> "100-psi", "15-mil" -> "20-mil")
+  const hyphenOld = 'Type VII, 60-psi minimum compressive strength with 15-mil vapor retarder.';
+  const hyphenNew = 'Type VII, 100-psi not less than compressive strength with 20-mil vapor retarder.';
+  const hyphenDiff = computeWordDiff(hyphenOld, hyphenNew);
+  const hyphenFlags = detectDeltaRiskFlags(hyphenDiff.tokens, hyphenOld, hyphenNew);
+  const hyphenChips = extractParagraphDeltaChips(hyphenOld, hyphenNew);
+  assert.ok(hyphenFlags.some((f) => f.includes('100-psi')));
+  assert.ok(hyphenFlags.some((f) => f.includes('20-mil')));
+  assert.ok(hyphenChips.includes('Strength: 60-psi → 100-psi'));
+  assert.ok(hyphenChips.includes('Gauge / Mil: 15-mil → 20-mil'));
+});
+
+test('matchCsiHeader and chunkIntoCsiSections handle DOCUMENT headers, cross-references, and TOC pages', () => {
+  const docMatch = matchCsiHeader('DOCUMENT 000105 - LIST OF CONSULTANTS');
+  assert.equal(docMatch?.normalizedCode, '00 01 05');
+  assert.equal(docMatch?.title, 'LIST OF CONSULTANTS');
+  assert.equal(docMatch?.isExplicit, true);
+
+  // Reject quoted cross-reference and wrapped prose cross-reference splits
+  assert.equal(
+    matchCsiHeader('01 31 00 - "Project Management and Coordination."'),
+    null
+  );
+  assert.equal(
+    matchCsiHeader('Section 096500 - Resilient', 'Refer to'),
+    null
+  );
+  assert.equal(
+    matchCsiHeader(
+      'Section 012400 – SCHEDULE OF VALUES: Allocation of portions of the Work as line items in',
+      '1. Section 011100 – SUMMARY OF WORK: Hours of work. 2.'
+    ),
+    null
+  );
+
+  // Suppress dense TOC pages (>= 5 CSI lines) while keeping real specification sections intact
+  const lines = [
+    { page: 1, yPct: 0.15, text: 'TABLE OF CONTENTS' },
+    { page: 1, yPct: 0.20, text: '01 11 00 SUMMARY OF WORK' },
+    { page: 1, yPct: 0.25, text: '01 22 00 UNIT PRICES' },
+    { page: 1, yPct: 0.30, text: '01 24 00 SCHEDULE OF VALUES' },
+    { page: 1, yPct: 0.35, text: '01 31 00 PROJECT MANAGEMENT AND COORDINATION' },
+    { page: 1, yPct: 0.40, text: '01 33 00 SUBMITTAL PROCEDURES' },
+    { page: 2, yPct: 0.15, text: 'SECTION 03 30 00 - CAST-IN-PLACE CONCRETE Page 1 of 5' },
+    { page: 2, yPct: 0.25, text: 'PART 1 GENERAL' },
+    { page: 2, yPct: 0.32, text: '1.1 Concrete strength shall be minimum 4,000 psi.' },
+  ];
+  const { sections } = chunkIntoCsiSections(lines, 2, new Map());
+  assert.deepEqual(
+    sections.map((s) => s.normalizedCode),
+    ['00 01 00', '03 30 00']
+  );
+  assert.equal(sections[1].title, 'CAST-IN-PLACE CONCRETE');
 });
 
 test('stripHeadersAndFooters removes stamps cleanly while preserving bottom-margin spec prose', () => {
   assert.equal(isSectionPageStamp('CAST-IN-PLACE CONCRETE 033000 - 5'), true);
+  assert.equal(isSectionPageStamp('Cast-in-Place Concrete 033000 - 5'), true);
+  assert.equal(isSectionPageStamp('Cast-in-Place Concrete 033000 - 5 Page 12 of 303'), true);
+  assert.equal(isSectionPageStamp('Cast-In-Place Concrete 03 30 00 - Page 5 of 12'), true);
   assert.equal(isSectionPageStamp('08 71 00 - DOOR HARDWARE - Page 4 of 12'), true);
   assert.equal(isSectionPageStamp('SECTION 03 30 00 - CAST-IN-PLACE CONCRETE'), false);
   assert.equal(isSectionPageStamp('1.02 SUBMITTALS'), false);
   assert.equal(isSectionPageStamp('Warranty period shall be 5 years. See page 12.'), false);
   assert.equal(isSectionPageStamp('Refer to Section 03 30 00 Page 5'), false);
+  assert.equal(isSectionPageStamp('Submit samples per 03 30 00 - 5'), false);
 
   const lines = [
     { page: 1, yPct: 0.04, text: 'ACME MEDICAL CENTER - BID SET' },
     { page: 1, yPct: 0.25, text: 'SECTION 03 30 00 - CAST-IN-PLACE CONCRETE' },
-    { page: 1, yPct: 0.94, text: 'CAST-IN-PLACE CONCRETE 033000 - 5' },
+    { page: 1, yPct: 0.94, text: 'Cast-in-Place Concrete 033000 - 5' },
     { page: 2, yPct: 0.04, text: 'ACME MEDICAL CENTER - BID SET' },
     { page: 2, yPct: 0.30, text: '1.02 SUBMITTALS' },
+    { page: 2, yPct: 0.91, text: 'Submit samples per 03 30 00 - 5' },
     { page: 2, yPct: 0.92, text: 'Warranty period shall be 5 years. See page 12.' },
     { page: 2, yPct: 0.93, text: 'Refer to Section 03 30 00 Page 5' },
     { page: 2, yPct: 0.96, text: 'CAST-IN-PLACE CONCRETE 033000 - 6' },
@@ -138,6 +198,7 @@ test('stripHeadersAndFooters removes stamps cleanly while preserving bottom-marg
     [
       'SECTION 03 30 00 - CAST-IN-PLACE CONCRETE',
       '1.02 SUBMITTALS',
+      'Submit samples per 03 30 00 - 5',
       'Warranty period shall be 5 years. See page 12.',
       'Refer to Section 03 30 00 Page 5',
       'Provide 4,000 psi concrete.',

@@ -69,12 +69,12 @@ export const RISK_PATTERNS: RiskPattern[] = [
   {
     label: 'PSI / Strength / AIC',
     category: 'Tolerance / Unit',
-    regex: /\b\d[\d,]*(?:\.\d+)?\s*(?:psi|ksi|mpa|k?aic)\b/gi,
+    regex: /\b\d[\d,]*(?:\.\d+)?[-\s]*(?:psi|ksi|mpa|k?aic)\b/gi,
   },
   {
     label: 'Thickness / Gauge / Mil',
     category: 'Tolerance / Unit',
-    regex: /\b\d+(?:\.\d+)?\s*(?:mil|mils|mm|cm|ga|gauge|in\.|inch|inches)\b/gi,
+    regex: /\b\d+(?:\.\d+)?[-\s]*(?:mil|mils|mm|cm|ga|gauge|in\.|inch|inches)\b/gi,
   },
   {
     label: 'Fire / Time Rating',
@@ -279,11 +279,11 @@ export function extractContextRiskMatch(
 }
 
 const DELTA_UNIT_GROUPS: Array<{ label: string; regex: RegExp }> = [
-  { label: 'Strength', regex: /\b\d[\d,]*(?:\.\d+)?\s*(?:psi|ksi|mpa)\b/gi },
-  { label: 'Gauge / Mil', regex: /\b\d+(?:\.\d+)?\s*(?:mil|mils|mm|ga|gauge)\b/gi },
+  { label: 'Strength', regex: /\b\d[\d,]*(?:\.\d+)?[-\s]*(?:psi|ksi|mpa)\b/gi },
+  { label: 'Gauge / Mil', regex: /\b\d+(?:\.\d+)?[-\s]*(?:mil|mils|mm|ga|gauge)\b/gi },
   { label: 'Rating / Term', regex: /\b\d+(?:\.\d+)?[-\s]?(?:hr|hour|hours|year|years|yr|yrs)\b/gi },
   { label: 'Cost', regex: /(?:\$\s?\d[\d,]*(?:\.\d{1,2})?|\b\d+(?:\.\d+)?%)/gi },
-  { label: 'AIC', regex: /\b\d[\d,]*\s*(?:k?aic)\b/gi },
+  { label: 'AIC', regex: /\b\d[\d,]*[-\s]*(?:k?aic)\b/gi },
 ];
 
 export function extractParagraphDeltaChips(oldText: string, newText: string): string[] {
