@@ -180,6 +180,7 @@ export function DiffWorkbench({
   const [noiseConfig, setNoiseConfig] = useState<NoiseFilterConfig>(DEFAULT_NOISE_CONFIG);
   const [reviewedCodes, setReviewedCodes] = useState<Set<string>>(() => new Set());
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const [showAllScannedPages, setShowAllScannedPages] = useState(false);
 
   // Opt-in Google Gemini Scope Brief state
   const [aiBriefEnabled, setAiBriefEnabled] = useState(false);
@@ -1598,28 +1599,52 @@ export function DiffWorkbench({
             {diffOutput.diagnostics.scannedWarning && (
               <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3 text-sm text-amber-950">
                 <AlertTriangle className="w-5 h-5 text-[#B45309] shrink-0 mt-0.5" />
-                <div className="space-y-1">
+                <div className="space-y-1.5 flex-1">
                   <div className="font-semibold">
-                    Partial low-text / scanned pages detected (no OCR text layer on specific sheets):
+                    Scanned / raster sheets skipped (no OCR text layer — verify skipped pages manually against signed PDF):
                   </div>
-                  <div className="text-xs font-mono space-y-0.5 tabular-nums">
+                  <div className="text-xs font-mono space-y-1 tabular-nums">
                     {(diffOutput.diagnostics.oldScannedPages?.length ?? 0) > 0 && (
                       <div>
                         Baseline ({diffOutput.diagnostics.oldFileName}):{' '}
-                        {diffOutput.diagnostics.oldScannedPages!.length} page(s) — pp.{' '}
-                        {diffOutput.diagnostics.oldScannedPages!.slice(0, 8).join(', ')}
-                        {diffOutput.diagnostics.oldScannedPages!.length > 8 ? '...' : ''}
+                        {diffOutput.diagnostics.oldScannedPages!.length} page(s) skipped — pp.{' '}
+                        {(showAllScannedPages
+                          ? diffOutput.diagnostics.oldScannedPages!
+                          : diffOutput.diagnostics.oldScannedPages!.slice(0, 8)
+                        ).join(', ')}
+                        {!showAllScannedPages &&
+                        diffOutput.diagnostics.oldScannedPages!.length > 8
+                          ? ` ... (+${diffOutput.diagnostics.oldScannedPages!.length - 8} more)`
+                          : ''}
                       </div>
                     )}
                     {(diffOutput.diagnostics.newScannedPages?.length ?? 0) > 0 && (
                       <div>
                         Addendum ({diffOutput.diagnostics.newFileName}):{' '}
-                        {diffOutput.diagnostics.newScannedPages!.length} page(s) — pp.{' '}
-                        {diffOutput.diagnostics.newScannedPages!.slice(0, 8).join(', ')}
-                        {diffOutput.diagnostics.newScannedPages!.length > 8 ? '...' : ''}
+                        {diffOutput.diagnostics.newScannedPages!.length} page(s) skipped — pp.{' '}
+                        {(showAllScannedPages
+                          ? diffOutput.diagnostics.newScannedPages!
+                          : diffOutput.diagnostics.newScannedPages!.slice(0, 8)
+                        ).join(', ')}
+                        {!showAllScannedPages &&
+                        diffOutput.diagnostics.newScannedPages!.length > 8
+                          ? ` ... (+${diffOutput.diagnostics.newScannedPages!.length - 8} more)`
+                          : ''}
                       </div>
                     )}
                   </div>
+                  {((diffOutput.diagnostics.oldScannedPages?.length ?? 0) > 8 ||
+                    (diffOutput.diagnostics.newScannedPages?.length ?? 0) > 8) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllScannedPages((prev) => !prev)}
+                      className="text-xs font-medium text-amber-900 underline underline-offset-2 hover:text-amber-950 cursor-pointer"
+                    >
+                      {showAllScannedPages
+                        ? 'Collapse skipped page list'
+                        : 'Show all skipped page numbers'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1707,7 +1732,13 @@ export function DiffWorkbench({
                       exportChangeLogToExcel(
                         allChangedSections,
                         'SpecDelta_All_Changes',
-                        reviewedCodes
+                        reviewedCodes,
+                        {
+                          oldFileName: diffOutput.diagnostics.oldFileName,
+                          newFileName: diffOutput.diagnostics.newFileName,
+                          oldScannedPages: diffOutput.diagnostics.oldScannedPages,
+                          newScannedPages: diffOutput.diagnostics.newScannedPages,
+                        }
                       )
                     );
                   }}
@@ -1724,7 +1755,13 @@ export function DiffWorkbench({
                         exportChangeLogToExcel(
                           filteredChangedSections,
                           'SpecDelta_Filtered_View',
-                          reviewedCodes
+                          reviewedCodes,
+                          {
+                            oldFileName: diffOutput.diagnostics.oldFileName,
+                            newFileName: diffOutput.diagnostics.newFileName,
+                            oldScannedPages: diffOutput.diagnostics.oldScannedPages,
+                            newScannedPages: diffOutput.diagnostics.newScannedPages,
+                          }
                         )
                       );
                     }}
@@ -1740,7 +1777,13 @@ export function DiffWorkbench({
                       exportChangeLogToCsv(
                         allChangedSections,
                         'SpecDelta_All_Changes',
-                        reviewedCodes
+                        reviewedCodes,
+                        {
+                          oldFileName: diffOutput.diagnostics.oldFileName,
+                          newFileName: diffOutput.diagnostics.newFileName,
+                          oldScannedPages: diffOutput.diagnostics.oldScannedPages,
+                          newScannedPages: diffOutput.diagnostics.newScannedPages,
+                        }
                       )
                     );
                   }}
@@ -1980,6 +2023,15 @@ export function DiffWorkbench({
                     filteredSections.map((sec) => {
                       const isSelected = activeSection?.sectionCode === sec.sectionCode;
                       const isReviewed = reviewedCodes.has(sec.sectionCode);
+                      const secScanOverlap =
+                        getOverlappingScannedPages(
+                          sec.oldPageRange,
+                          diffOutput.diagnostics.oldScannedPages
+                        ).length > 0 ||
+                        getOverlappingScannedPages(
+                          sec.newPageRange,
+                          diffOutput.diagnostics.newScannedPages
+                        ).length > 0;
                       return (
                         <button
                           key={sec.sectionCode}
@@ -2051,6 +2103,14 @@ export function DiffWorkbench({
                                 <span aria-hidden="true">·</span>
                                 <span className="text-[#B45309] font-medium">
                                   {sec.riskFlags.length} Risk
+                                </span>
+                              </>
+                            )}
+                            {secScanOverlap && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span className="text-amber-800 font-medium">
+                                  No-OCR Sheet
                                 </span>
                               </>
                             )}
@@ -2244,47 +2304,49 @@ export function DiffWorkbench({
                     </div>
 
                     <div className="p-6 space-y-5">
+                      {(() => {
+                        const oldOverlapping = getOverlappingScannedPages(
+                          activeSection.oldPageRange,
+                          diffOutput.diagnostics.oldScannedPages
+                        );
+                        const newOverlapping = getOverlappingScannedPages(
+                          activeSection.newPageRange,
+                          diffOutput.diagnostics.newScannedPages
+                        );
+                        if (oldOverlapping.length === 0 && newOverlapping.length === 0) {
+                          return null;
+                        }
+                        return (
+                          <div className="rounded-md border border-amber-300 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-950 font-mono tabular-nums flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-[#B45309] shrink-0 mt-0.5" />
+                            <span>
+                              Raster / scanned sheet(s) without OCR text skipped inside this section range (
+                              {oldOverlapping.length > 0 ? `Baseline pp. ${oldOverlapping.join(', ')}` : ''}
+                              {oldOverlapping.length > 0 && newOverlapping.length > 0 ? ' · ' : ''}
+                              {newOverlapping.length > 0 ? `Addendum pp. ${newOverlapping.join(', ')}` : ''}
+                              ) — verify skipped sheets manually.
+                            </span>
+                          </div>
+                        );
+                      })()}
                       {activeSection.status === 'unchanged' ? (
-                        (() => {
-                          const oldOverlapping = getOverlappingScannedPages(
-                            activeSection.oldPageRange,
-                            diffOutput.diagnostics.oldScannedPages
-                          );
-                          const newOverlapping = getOverlappingScannedPages(
-                            activeSection.newPageRange,
-                            diffOutput.diagnostics.newScannedPages
-                          );
-                          const hasSectionScannedOverlap =
-                            oldOverlapping.length > 0 || newOverlapping.length > 0;
-                          return (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 flex items-start gap-3">
-                              <CheckCircle2 className="w-5 h-5 text-[#15803D] shrink-0 mt-0.5" />
-                              <div>
-                                <div className="text-sm font-semibold text-slate-900">
-                                  {activeSection.renumberedFrom
-                                    ? `Renumbered (${activeSection.renumberedFrom} → ${activeSection.sectionCode}) · No Differences in Extracted Text`
-                                    : 'No Differences in Extracted Text'}
-                                </div>
-                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                                  Across page shift{' '}
-                                  <span className="font-mono tabular-nums">{activeSection.oldPageRange}</span>{' '}
-                                  →{' '}
-                                  <span className="font-mono tabular-nums">{activeSection.newPageRange}</span>,
-                                  SpecDelta stripped repeating headers/footers and found no differences in extracted text.
-                                  {hasSectionScannedOverlap && (
-                                    <span className="block mt-1 text-amber-800 font-medium font-mono tabular-nums">
-                                      Note: raster-image page(s) without OCR text overlap this section (
-                                      {oldOverlapping.length > 0 ? `Baseline pp. ${oldOverlapping.join(', ')}` : ''}
-                                      {oldOverlapping.length > 0 && newOverlapping.length > 0 ? ' · ' : ''}
-                                      {newOverlapping.length > 0 ? `Addendum pp. ${newOverlapping.join(', ')}` : ''}
-                                      ) and could not be text-verified.
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 flex items-start gap-3">
+                          <CheckCircle2 className="w-5 h-5 text-[#15803D] shrink-0 mt-0.5" />
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">
+                              {activeSection.renumberedFrom
+                                ? `Renumbered (${activeSection.renumberedFrom} → ${activeSection.sectionCode}) · No Differences in Extracted Text`
+                                : 'No Differences in Extracted Text'}
                             </div>
-                          );
-                        })()
+                            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                              Across page shift{' '}
+                              <span className="font-mono tabular-nums">{activeSection.oldPageRange}</span>{' '}
+                              →{' '}
+                              <span className="font-mono tabular-nums">{activeSection.newPageRange}</span>,
+                              SpecDelta stripped repeating headers/footers and found no differences in extracted text.
+                            </p>
+                          </div>
+                        </div>
                       ) : showFullSection ? (
                         <div className="space-y-4">
                           <div className="text-xs font-medium text-slate-500">

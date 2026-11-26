@@ -20,6 +20,7 @@ import {
   computeSpecContentHash,
   computeWordDiff,
 } from '../src/utils/specDiffEngine';
+import { buildChangeLogRows, getOverlappingScannedPages } from '../src/utils/exporters';
 import { DEFAULT_NOISE_CONFIG, type SingleSpecParseOutput } from '../src/types/spec';
 
 test('normalizeCsiCode aligns 6-digit, compact, legacy 5-digit, and subsection formats', () => {
@@ -441,3 +442,72 @@ test('end-to-end PDF binary parsing pipeline handles generated sample Project Ma
   assert.equal(hvac?.status, 'unchanged');
   assert.notEqual(hvac?.oldPageRange, hvac?.newPageRange);
 });
+
+test('partial scanned pages propagate into diagnostics and change log export rows', () => {
+  const oldBook: SingleSpecParseOutput = {
+    fileName: 'Base_PartialScan.pdf',
+    pageCount: 10,
+    parseTimeMs: 25,
+    scannedWarning: true,
+    isMostlyScanned: false,
+    scannedPages: [2, 3],
+    strippedPatterns: [],
+    sections: [
+      {
+        id: '03 30 00__0',
+        rawCode: 'SECTION 03 30 00',
+        normalizedCode: '03 30 00',
+        division: '03',
+        divisionTitle: 'Concrete',
+        title: 'CAST-IN-PLACE CONCRETE',
+        startPage: 1,
+        endPage: 4,
+        text: 'Minimum 4,000 psi.',
+        paragraphs: ['Minimum 4,000 psi.'],
+      },
+    ],
+  };
+
+  const newBook: SingleSpecParseOutput = {
+    fileName: 'Addendum_PartialScan.pdf',
+    pageCount: 10,
+    parseTimeMs: 25,
+    scannedWarning: true,
+    isMostlyScanned: false,
+    scannedPages: [4],
+    strippedPatterns: [],
+    sections: [
+      {
+        id: '03 30 00__0',
+        rawCode: 'SECTION 03 30 00',
+        normalizedCode: '03 30 00',
+        division: '03',
+        divisionTitle: 'Concrete',
+        title: 'CAST-IN-PLACE CONCRETE',
+        startPage: 1,
+        endPage: 5,
+        text: 'Minimum 5,000 psi.',
+        paragraphs: ['Minimum 5,000 psi.'],
+      },
+    ],
+  };
+
+  const diff = compareParsedBooks(oldBook, newBook);
+  assert.equal(diff.diagnostics.scannedWarning, true);
+  assert.deepEqual(diff.diagnostics.oldScannedPages, [2, 3]);
+  assert.deepEqual(diff.diagnostics.newScannedPages, [4]);
+  assert.deepEqual(getOverlappingScannedPages('1-4', diff.diagnostics.oldScannedPages), [2, 3]);
+
+  const rows = buildChangeLogRows(diff.results, new Set(['03 30 00']), {
+    oldFileName: diff.diagnostics.oldFileName,
+    newFileName: diff.diagnostics.newFileName,
+    oldScannedPages: diff.diagnostics.oldScannedPages,
+    newScannedPages: diff.diagnostics.newScannedPages,
+  });
+
+  assert.equal(rows[0][1], 'NO-OCR PAGES');
+  assert.ok(rows[0][10].includes('pp. 2, 3'));
+  assert.ok(rows[0][10].includes('pp. 4'));
+  assert.equal(rows[1][10], 'Old pp. 2, 3 (no OCR); New pp. 4 (no OCR)');
+});
+
