@@ -85,6 +85,23 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function getOverlappingScannedPages(
+  pageRangeStr: string,
+  scannedPages?: number[]
+): number[] {
+  if (!scannedPages || scannedPages.length === 0 || !pageRangeStr || pageRangeStr === '—') {
+    return [];
+  }
+  const parts = pageRangeStr
+    .split(/[–-]/)
+    .map((p) => parseInt(p.trim(), 10))
+    .filter((n) => !Number.isNaN(n));
+  if (parts.length === 0) return [];
+  const start = parts[0];
+  const end = parts[parts.length - 1];
+  return scannedPages.filter((p) => p >= start && p <= end);
+}
+
 export function DiffWorkbench({
   onNavigate,
   externalSampleRequest,
@@ -113,11 +130,13 @@ export function DiffWorkbench({
   const [showNoiseDrawer, setShowNoiseDrawer] = useState(false);
   const [noiseConfig, setNoiseConfig] = useState<NoiseFilterConfig>(DEFAULT_NOISE_CONFIG);
   const [reviewedCodes, setReviewedCodes] = useState<Set<string>>(() => new Set());
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
 
   // Opt-in Google Gemini Scope Brief state
   const [aiBriefEnabled, setAiBriefEnabled] = useState(false);
   const [aiBriefLoading, setAiBriefLoading] = useState(false);
   const [aiBriefError, setAiBriefError] = useState<string | null>(null);
+  const [aiBriefNotice, setAiBriefNotice] = useState<string | null>(null);
   const [aiBrief, setAiBrief] = useState<ScopeBriefResponse | null>(null);
   const [sentToGeminiInfo, setSentToGeminiInfo] = useState<{
     sectionsSent: number;
@@ -444,8 +463,8 @@ export function DiffWorkbench({
     setNewSlot(prevOld);
     setAiBrief(null);
     setAiBriefError(null);
+    setAiBriefNotice(null);
     setSentToGeminiInfo(null);
-    setReviewedCodes(new Set());
     setFileProgressMap((prev) => ({
       old: prev.new ? { ...prev.new, side: 'old' } : undefined,
       new: prev.old ? { ...prev.old, side: 'new' } : undefined,
@@ -701,14 +720,35 @@ export function DiffWorkbench({
     return count;
   }, [diffOutput, reviewedCodes]);
 
-  const toggleReviewed = useCallback((sectionCode: string) => {
-    setReviewedCodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(sectionCode)) next.delete(sectionCode);
-      else next.add(sectionCode);
-      return next;
-    });
-  }, []);
+  const announceSection = useCallback(
+    (sec: DiffSectionResult, extraPrefix?: string) => {
+      const riskText =
+        sec.riskFlags.length > 0
+          ? `${sec.riskFlags.length} risk flag${sec.riskFlags.length === 1 ? '' : 's'}`
+          : 'no risk flags';
+      const revText = reviewedCodes.has(sec.sectionCode) ? 'Reviewed' : 'Unreviewed';
+      setLiveAnnouncement(
+        `${extraPrefix ? `${extraPrefix}: ` : ''}${sec.sectionCode} ${sec.title}, ${sec.status}, ${riskText}, ${revText}`
+      );
+    },
+    [reviewedCodes]
+  );
+
+  const toggleReviewed = useCallback(
+    (sectionCode: string) => {
+      setReviewedCodes((prev) => {
+        const next = new Set(prev);
+        const nowReviewed = !next.has(sectionCode);
+        if (nowReviewed) next.add(sectionCode);
+        else next.delete(sectionCode);
+        setLiveAnnouncement(
+          `${sectionCode} marked as ${nowReviewed ? 'reviewed' : 'unreviewed'}`
+        );
+        return next;
+      });
+    },
+    []
+  );
 
   const activeIndex = useMemo(() => {
     if (!activeSection) return -1;
@@ -723,13 +763,62 @@ export function DiffWorkbench({
       const currentIdx = activeIndex >= 0 ? activeIndex : 0;
       const nextIdx =
         (currentIdx + delta + filteredSections.length) % filteredSections.length;
-      setSelectedCode(filteredSections[nextIdx].sectionCode);
+      const target = filteredSections[nextIdx];
+      setSelectedCode(target.sectionCode);
       setShowFullSection(false);
+      announceSection(target);
     },
-    [filteredSections, activeIndex]
+    [filteredSections, activeIndex, announceSection]
   );
 
-  // Keyboard navigation: 'n' (next section) and 'p' (previous section)
+  const jumpToNextMatching = useCallback(
+    (kind: 'risk' | 'unreviewed') => {
+      const matches = (sec: DiffSectionResult) =>
+        kind === 'risk'
+          ? sec.status !== 'unchanged' && sec.riskFlags.length > 0
+          : sec.status !== 'unchanged' && !reviewedCodes.has(sec.sectionCode);
+
+      if (filteredSections.length > 0) {
+        const startIdx = activeIndex >= 0 ? activeIndex + 1 : 0;
+        for (let offset = 0; offset < filteredSections.length; offset++) {
+          const cand = filteredSections[(startIdx + offset) % filteredSections.length];
+          if (matches(cand)) {
+            setSelectedCode(cand.sectionCode);
+            setShowFullSection(false);
+            announceSection(
+              cand,
+              kind === 'risk' ? 'Next risk section' : 'Next unreviewed section'
+            );
+            return;
+          }
+        }
+      }
+
+      // Fall back across all changed sections if current filter excludes matches
+      const fallback = allChangedSections.find(matches);
+      if (fallback) {
+        setStatusFilter(kind === 'risk' ? 'risk' : 'changed');
+        setDivisionFilter('all');
+        setSearchQuery('');
+        setSelectedCode(fallback.sectionCode);
+        setShowFullSection(false);
+        announceSection(
+          fallback,
+          kind === 'risk' ? 'Next risk section' : 'Next unreviewed section'
+        );
+        return;
+      }
+
+      setLiveAnnouncement(
+        kind === 'risk'
+          ? 'No risk-flagged sections found in this comparison.'
+          : 'All changed sections have been reviewed.'
+      );
+    },
+    [filteredSections, allChangedSections, activeIndex, reviewedCodes, announceSection]
+  );
+
+  // Keyboard navigation: 'n' (next), 'p' (prev), 'r' (next risk), 'u' (next unreviewed)
   useEffect(() => {
     if (!diffOutput) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -744,17 +833,24 @@ export function DiffWorkbench({
       ) {
         return;
       }
-      if (e.key === 'n') {
+      const key = e.key.toLowerCase();
+      if (key === 'n') {
         e.preventDefault();
         stepSection(1);
-      } else if (e.key === 'p') {
+      } else if (key === 'p') {
         e.preventDefault();
         stepSection(-1);
+      } else if (key === 'r') {
+        e.preventDefault();
+        jumpToNextMatching('risk');
+      } else if (key === 'u') {
+        e.preventDefault();
+        jumpToNextMatching('unreviewed');
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [diffOutput, stepSection]);
+  }, [diffOutput, stepSection, jumpToNextMatching]);
 
   const changedPayloadEstimate = useMemo(() => {
     if (!diffOutput) {
@@ -807,38 +903,92 @@ export function DiffWorkbench({
     const changedSections = diffOutput.results.filter((r) => r.status !== 'unchanged');
     if (changedSections.length === 0) return;
 
+    // Rank and cap client-side so only what Gemini analyzes leaves the browser
+    const ranked = [...changedSections].sort(
+      (a, b) =>
+        b.riskFlags.length - a.riskFlags.length ||
+        b.addedWords + b.deletedWords - (a.addedWords + a.deletedWords) ||
+        b.changedParagraphs.length - a.changedParagraphs.length ||
+        a.sectionCode.localeCompare(b.sectionCode)
+    );
+
+    const buildPayload = (maxSections: number, maxParas: number, maxChars: number) =>
+      JSON.stringify({
+        totalChangedCount: changedSections.length,
+        sections: ranked.slice(0, maxSections).map((s) => ({
+          sectionCode: s.sectionCode,
+          division: `${s.division} - ${s.divisionTitle}`,
+          title: s.title,
+          status: s.status,
+          changedParagraphs: s.changedParagraphs.slice(0, maxParas).map((p) => ({
+            oldText: p.oldText.slice(0, maxChars),
+            newText: p.newText.slice(0, maxChars),
+            riskFlags: p.riskFlags,
+          })),
+        })),
+      });
+
+    let chosenSections = Math.min(25, ranked.length);
+    let bodyString = buildPayload(chosenSections, 8, 700);
+    let narrowedNotice: string | null = null;
+
+    if (bodyString.length > 1_500_000) {
+      for (const candidate of [15, 8, 4]) {
+        const nextCount = Math.min(candidate, ranked.length);
+        const nextBody = buildPayload(nextCount, 6, 500);
+        if (nextBody.length <= 1_500_000 || candidate === 4) {
+          chosenSections = nextCount;
+          bodyString = nextBody;
+          narrowedNotice = `Payload too large for all 25 sections — automatically narrowed to top ${chosenSections} risk-ranked sections.`;
+          break;
+        }
+      }
+    }
+
     setAiBriefLoading(true);
     setAiBriefError(null);
+    setAiBriefNotice(narrowedNotice);
     try {
       const response = await fetch('/api/scope-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sections: changedSections.map((s) => ({
-            sectionCode: s.sectionCode,
-            division: `${s.division} - ${s.divisionTitle}`,
-            title: s.title,
-            status: s.status,
-            changedParagraphs: s.changedParagraphs.map((p) => ({
-              oldText: p.oldText,
-              newText: p.newText,
-              riskFlags: p.riskFlags,
-            })),
-          })),
-        }),
+        body: bodyString,
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate Scope Impact Brief.');
+      const rawText = await response.text();
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        parsed = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
+      } catch {
+        parsed = null;
       }
-      const briefData = data as ScopeBriefResponse;
+
+      if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error(
+            `Payload too large even after capping to top ${chosenSections} sections. Narrow filters to fewer sections and retry.`
+          );
+        }
+        const serverErr =
+          parsed && typeof parsed.error === 'string'
+            ? parsed.error
+            : rawText.slice(0, 200) || `Request failed with HTTP ${response.status}.`;
+        throw new Error(serverErr);
+      }
+
+      if (!parsed) {
+        throw new Error('Server returned an unexpected non-JSON response.');
+      }
+
+      const briefData = parsed as unknown as ScopeBriefResponse;
       setAiBrief(briefData);
       setSentToGeminiInfo({
-        sectionsSent: briefData.sectionsSentCount ?? Math.min(25, changedSections.length),
+        sectionsSent: briefData.sectionsSentCount ?? chosenSections,
         totalChanged: briefData.totalChangedSections ?? changedSections.length,
       });
     } catch (err: unknown) {
-      setAiBriefError(err instanceof Error ? err.message : 'Unable to reach Google Gemini brief endpoint.');
+      setAiBriefError(
+        err instanceof Error ? err.message : 'Unable to reach Google Gemini brief endpoint.'
+      );
     } finally {
       setAiBriefLoading(false);
     }
@@ -1748,6 +1898,12 @@ export function DiffWorkbench({
                   </button>
                 </div>
 
+                {aiBriefNotice && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs text-amber-950">
+                    {aiBriefNotice}
+                  </div>
+                )}
+
                 {aiBriefError && (
                   <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-3 text-xs text-red-900">
                     {aiBriefError}
@@ -1909,6 +2065,13 @@ export function DiffWorkbench({
                       </button>
                     </div>
                   </div>
+                  <div className="pt-1 border-t border-slate-100 text-[11px] font-mono text-slate-500">
+                    Keys: n next · p prev · r next risk · u next unreviewed
+                  </div>
+                </div>
+
+                <div role="status" aria-live="polite" className="sr-only">
+                  {liveAnnouncement}
                 </div>
 
                 <div className="max-h-[640px] overflow-y-auto divide-y divide-slate-100">
@@ -1927,6 +2090,7 @@ export function DiffWorkbench({
                           onClick={() => {
                             setSelectedCode(sec.sectionCode);
                             setShowFullSection(false);
+                            announceSection(sec);
                           }}
                           className={`w-full text-left px-4 py-3 transition-colors cursor-pointer ${
                             isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50'
@@ -2046,26 +2210,50 @@ export function DiffWorkbench({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          {filteredSections.length > 1 && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => stepSection(-1)}
-                                title="Previous section (p)"
-                                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer"
-                              >
-                                <ChevronLeft className="w-3.5 h-3.5" />
-                                Prev (p)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => stepSection(1)}
-                                title="Next section (n)"
-                                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer"
-                              >
-                                Next (n)
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
+                          {filteredSections.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {filteredSections.length > 1 && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => stepSection(-1)}
+                                    title="Previous section (p)"
+                                    className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer"
+                                  >
+                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                    Prev (p)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => stepSection(1)}
+                                    title="Next section (n)"
+                                    className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-md hover:bg-slate-50 cursor-pointer"
+                                  >
+                                    Next (n)
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                              {counts.risk > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToNextMatching('risk')}
+                                  title="Next risk-flagged section (r)"
+                                  className="px-2 py-1.5 text-xs font-medium text-[#B45309] bg-amber-50/70 border border-amber-200 rounded-md hover:bg-amber-100/70 cursor-pointer"
+                                >
+                                  Risk (r)
+                                </button>
+                              )}
+                              {counts.changed > reviewedChangedCount && (
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToNextMatching('unreviewed')}
+                                  title="Next unreviewed changed section (u)"
+                                  className="px-2 py-1.5 text-xs font-medium text-[#1E40AF] bg-blue-50/70 border border-blue-200 rounded-md hover:bg-blue-100/70 cursor-pointer"
+                                >
+                                  Unreviewed (u)
+                                </button>
+                              )}
                             </div>
                           )}
 
@@ -2160,29 +2348,46 @@ export function DiffWorkbench({
 
                     <div className="p-6 space-y-5">
                       {activeSection.status === 'unchanged' ? (
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 flex items-start gap-3">
-                          <CheckCircle2 className="w-5 h-5 text-[#15803D] shrink-0 mt-0.5" />
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              {activeSection.renumberedFrom
-                                ? `Renumbered (${activeSection.renumberedFrom} → ${activeSection.sectionCode}) · No Differences in Extracted Text`
-                                : 'No Differences in Extracted Text'}
+                        (() => {
+                          const oldOverlapping = getOverlappingScannedPages(
+                            activeSection.oldPageRange,
+                            diffOutput.diagnostics.oldScannedPages
+                          );
+                          const newOverlapping = getOverlappingScannedPages(
+                            activeSection.newPageRange,
+                            diffOutput.diagnostics.newScannedPages
+                          );
+                          const hasSectionScannedOverlap =
+                            oldOverlapping.length > 0 || newOverlapping.length > 0;
+                          return (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 flex items-start gap-3">
+                              <CheckCircle2 className="w-5 h-5 text-[#15803D] shrink-0 mt-0.5" />
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">
+                                  {activeSection.renumberedFrom
+                                    ? `Renumbered (${activeSection.renumberedFrom} → ${activeSection.sectionCode}) · No Differences in Extracted Text`
+                                    : 'No Differences in Extracted Text'}
+                                </div>
+                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                  Across page shift{' '}
+                                  <span className="font-mono tabular-nums">{activeSection.oldPageRange}</span>{' '}
+                                  →{' '}
+                                  <span className="font-mono tabular-nums">{activeSection.newPageRange}</span>,
+                                  SpecDelta stripped repeating headers/footers and found no differences in extracted text.
+                                  {hasSectionScannedOverlap && (
+                                    <span className="block mt-1 text-amber-800 font-medium font-mono tabular-nums">
+                                      Note: raster-image page(s) without OCR text overlap this section (
+                                      {oldOverlapping.length > 0 ? `Baseline pp. ${oldOverlapping.join(', ')}` : ''}
+                                      {oldOverlapping.length > 0 && newOverlapping.length > 0 ? ' · ' : ''}
+                                      {newOverlapping.length > 0 ? `Addendum pp. ${newOverlapping.join(', ')}` : ''}
+                                      ) and could not be text-verified.
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
                             </div>
-                            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                              Across page shift{' '}
-                              <span className="font-mono tabular-nums">{activeSection.oldPageRange}</span>{' '}
-                              →{' '}
-                              <span className="font-mono tabular-nums">{activeSection.newPageRange}</span>,
-                              SpecDelta stripped repeating headers/footers and found no differences in extracted text.
-                              {((diffOutput.diagnostics.oldScannedPages?.length ?? 0) > 0 ||
-                                (diffOutput.diagnostics.newScannedPages?.length ?? 0) > 0) && (
-                                <span className="block mt-1 text-amber-800 font-medium">
-                                  Note: {(diffOutput.diagnostics.oldScannedPages?.length ?? 0) + (diffOutput.diagnostics.newScannedPages?.length ?? 0)} page(s) in this set had no extractable text layer (&lt;30 chars) and could not be text-verified.
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
+                          );
+                        })()
                       ) : showFullSection ? (
                         <div className="space-y-4">
                           <div className="text-xs font-medium text-slate-500">

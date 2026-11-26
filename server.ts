@@ -44,6 +44,11 @@ app.post('/api/scope-brief', async (req, res) => {
       return;
     }
 
+    const totalChangedCount =
+      typeof req.body?.totalChangedCount === 'number' && req.body.totalChangedCount >= sections.length
+        ? Math.round(req.body.totalChangedCount)
+        : sections.length;
+
     // Prioritize highest-risk and largest-delta sections before capping payload to 25
     const ranked = [...sections].sort((a, b) => {
       const aRisks = a.changedParagraphs.reduce((sum, p) => sum + p.riskFlags.length, 0);
@@ -77,7 +82,7 @@ app.post('/api/scope-brief', async (req, res) => {
     });
 
     const prompt = `You are a senior commercial construction chief estimator reviewing isolated specification changes between an original Project Manual and an Addendum.
-Analyze ONLY the following changed specification excerpts (the top ${condensed.length} risk-ranked sections out of ${sections.length} changed sections) and produce an executive 5-bullet (or fewer if fewer than 5 distinct changes exist) Cost & Scope Impact Brief for bid day.
+Analyze ONLY the following changed specification excerpts (the top ${condensed.length} risk-ranked sections out of ${totalChangedCount} changed sections) and produce an executive 5-bullet (or fewer if fewer than 5 distinct changes exist) Cost & Scope Impact Brief for bid day.
 Focus strictly on hard cost drivers, material/tolerance upgrades (PSI, mil, gauge), scope transfers (furnish vs. install, by Owner), allowances, warranties, and lead-time risks.
 Do not invent sections or values that are not present in the provided JSON.
 
@@ -135,7 +140,7 @@ ${JSON.stringify(condensed, null, 2)}`;
     res.json({
       ...parsed,
       sectionsSentCount: condensed.length,
-      totalChangedSections: sections.length,
+      totalChangedSections: totalChangedCount,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to generate Scope Impact Brief.';

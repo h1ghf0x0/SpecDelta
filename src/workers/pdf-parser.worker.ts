@@ -13,6 +13,17 @@ import {
 // Bind pdfjs worker handler locally inside this Web Worker so zero external worker requests occur
 (globalThis as Record<string, unknown>).pdfjsWorker = pdfjsWorker;
 
+const IMAGE_PAINT_OPS = new Set<number>([
+  pdfjsLib.OPS.paintImageMaskXObject,
+  pdfjsLib.OPS.paintImageMaskXObjectGroup,
+  pdfjsLib.OPS.paintImageXObject,
+  pdfjsLib.OPS.paintInlineImageXObject,
+  pdfjsLib.OPS.paintInlineImageXObjectGroup,
+  pdfjsLib.OPS.paintImageXObjectRepeat,
+  pdfjsLib.OPS.paintImageMaskXObjectRepeat,
+  pdfjsLib.OPS.paintSolidColorImageMask,
+]);
+
 interface RawPageLine {
   page: number;
   yPct: number;
@@ -265,7 +276,17 @@ async function extractLinesWithCoordinates(
       }
 
       if (pageChars < 30) {
-        scannedPages.push(p);
+        let hasImageOp = false;
+        try {
+          const opList = await page.getOperatorList();
+          hasImageOp = opList.fnArray.some((op) => IMAGE_PAINT_OPS.has(op));
+        } catch {
+          // If operator list inspection fails on a malformed stream, fall back conservatively
+          hasImageOp = pageChars === 0;
+        }
+        if (hasImageOp) {
+          scannedPages.push(p);
+        }
       }
 
       page.cleanup();
@@ -582,6 +603,7 @@ self.onmessage = async (event: MessageEvent<ParsePdfRequest>) => {
     );
     const isMostlyScanned =
       pageCount > 0 &&
+      scannedPages.length > 0 &&
       (totalChars / pageCount < 40 || scannedPages.length / pageCount >= 0.5);
     const scannedWarning = isMostlyScanned || scannedPages.length > 0;
 
