@@ -1,0 +1,198 @@
+import { useEffect, useState } from 'react';
+import { DiffWorkbench } from './components/DiffWorkbench';
+import { Footer } from './components/Footer';
+import { SeoContentPage } from './components/SeoContentPage';
+import { SpecSplitter } from './components/SpecSplitter';
+import { TopNav } from './components/TopNav';
+import { SEO_PAGES } from './data/seoContent';
+import type { AppRoute } from './types/spec';
+
+const VALID_ROUTES = new Set<AppRoute>([
+  '/',
+  '/split-spec-book',
+  '/vs-bluebeam',
+  '/acrobat-alternative',
+  '/unclouded-addenda',
+  '/benchmark',
+  '/compare-division-03-concrete-specs',
+  '/compare-division-07-thermal-moisture-specs',
+  '/compare-division-08-doors-hardware-specs',
+  '/compare-division-09-finishes-specs',
+  '/compare-division-23-hvac-specs',
+  '/compare-division-26-electrical-specs',
+]);
+
+function normalizeRoute(pathname: string): AppRoute {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  return VALID_ROUTES.has(clean as AppRoute) ? (clean as AppRoute) : '/';
+}
+
+function updateDocumentSeo(route: AppRoute) {
+  let title = 'SpecDelta – Section-Aware Construction Spec Diff & CSI Splitter';
+  let description =
+    'Compare 600-page Project Manuals and Addenda locally in your browser by CSI section—no page-shift false positives, instant Excel redlines, and CSI PDF splitting.';
+
+  const schemas: unknown[] = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'SpecDelta',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web Browser',
+      description,
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+      },
+    },
+  ];
+
+  if (route === '/split-spec-book') {
+    title = 'Free CSI MasterFormat Spec Book Splitter | SpecDelta';
+    description =
+      'Upload an 800-page construction Project Manual PDF and extract only your CSI Division or sections into a clean standalone PDF locally in your browser.';
+    schemas.push({
+      '@context': 'https://schema.org',
+      '@type': 'HowTo',
+      name: 'How to Split a Construction Project Manual by CSI Division',
+      step: [
+        {
+          '@type': 'HowToStep',
+          name: 'Load Project Manual PDF',
+          text: 'Drop your full GC Project Manual PDF into the browser splitter.',
+        },
+        {
+          '@type': 'HowToStep',
+          name: 'Select CSI Divisions or Sections',
+          text: 'Check only the CSI MasterFormat divisions or sections you are bidding.',
+        },
+        {
+          '@type': 'HowToStep',
+          name: 'Download Extracted PDF',
+          text: 'Click Download Extracted PDF to save a sliced PDF in seconds.',
+        },
+      ],
+    });
+  } else if (route !== '/' && route in SEO_PAGES) {
+    const cfg = SEO_PAGES[route];
+    title = cfg.metaTitle;
+    description = cfg.metaDescription;
+    schemas.push({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: cfg.faqs.map((f) => ({
+        '@type': 'Question',
+        name: f.question,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: f.answer,
+        },
+      })),
+    });
+    schemas.push({
+      '@context': 'https://schema.org',
+      '@type': 'HowTo',
+      name: cfg.headline,
+      step: cfg.howToSteps.map((s) => ({
+        '@type': 'HowToStep',
+        name: s.step,
+        text: s.description,
+      })),
+    });
+  }
+
+  document.title = title;
+  const setMeta = (selector: string, content: string) => {
+    const el = document.querySelector(selector);
+    if (el) el.setAttribute('content', content);
+  };
+  setMeta('meta[name="description"]', description);
+  setMeta('meta[property="og:title"]', title);
+  setMeta('meta[property="og:description"]', description);
+  setMeta('meta[name="twitter:title"]', title);
+  setMeta('meta[name="twitter:description"]', description);
+
+  const schemaScript = document.getElementById('specdelta-schema');
+  if (schemaScript) {
+    schemaScript.textContent = JSON.stringify(schemas);
+  }
+}
+
+export default function App() {
+  const [route, setRoute] = useState<AppRoute>(() =>
+    normalizeRoute(window.location.pathname)
+  );
+  const [divisionPreset, setDivisionPreset] = useState<string>('all');
+  const [sampleRequestCount, setSampleRequestCount] = useState<number>(0);
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRoute(normalizeRoute(window.location.pathname));
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    updateDocumentSeo(route);
+  }, [route]);
+
+  const navigate = (nextRoute: AppRoute, divisionCode?: string) => {
+    if (divisionCode) {
+      setDivisionPreset(divisionCode);
+    } else if (nextRoute === '/') {
+      setDivisionPreset('all');
+    }
+    if (window.location.pathname !== nextRoute) {
+      window.history.pushState({}, '', nextRoute);
+    }
+    setRoute(nextRoute);
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  };
+
+  const handleLoadSampleFromAnywhere = (divisionCode?: string) => {
+    if (divisionCode) {
+      setDivisionPreset(divisionCode);
+    }
+    if (route !== '/') {
+      window.history.pushState({}, '', '/');
+      setRoute('/');
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+    setSampleRequestCount((c) => c + 1);
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#F6F7F9] text-[#0F172A]">
+      <TopNav
+        currentRoute={route}
+        onNavigate={(r) => navigate(r)}
+        onLoadSample={() => handleLoadSampleFromAnywhere()}
+        isBusy={isBusy}
+      />
+
+      <main className="flex-1">
+        {route === '/' ? (
+          <DiffWorkbench
+            onNavigate={(r) => navigate(r)}
+            externalSampleRequest={sampleRequestCount}
+            initialDivisionFilter={divisionPreset}
+            onBusyChange={setIsBusy}
+          />
+        ) : route === '/split-spec-book' ? (
+          <SpecSplitter onNavigateWithDivision={(r, div) => navigate(r, div)} />
+        ) : (
+          <SeoContentPage
+            route={route}
+            onNavigate={(r, div) => navigate(r, div)}
+            onRunSampleDiff={(div) => handleLoadSampleFromAnywhere(div)}
+          />
+        )}
+      </main>
+
+      <Footer onNavigate={(r) => navigate(r)} />
+    </div>
+  );
+}
