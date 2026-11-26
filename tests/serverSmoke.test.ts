@@ -18,7 +18,7 @@ async function waitForServer(url: string, timeoutMs = 8000): Promise<void> {
   throw new Error(`Timed out waiting for production server at ${url}`);
 }
 
-test('npm start (node server.ts) boots production build, uses APP_URL canonical, and serves 200/404', async (t) => {
+test('npm start (tsx server.ts) boots production build, uses APP_URL canonical, and serves 200/404', async (t) => {
   const distIndex = path.resolve(process.cwd(), 'dist/index.html');
   if (!fs.existsSync(distIndex)) {
     execFileSync('npx', ['vite', 'build'], { stdio: 'ignore' });
@@ -26,8 +26,9 @@ test('npm start (node server.ts) boots production build, uses APP_URL canonical,
 
   const testPort = 3199;
   const canonicalOrigin = 'https://specdelta.example.com';
+  const tsxBin = path.resolve(process.cwd(), 'node_modules/.bin/tsx');
 
-  const child = spawn(process.execPath, ['server.ts'], {
+  const child = spawn(tsxBin, ['server.ts'], {
     cwd: process.cwd(),
     env: {
       ...process.env,
